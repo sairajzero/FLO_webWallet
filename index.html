@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-    <title>FLO Web Wallet</title>
+    <title>FLO Wallet</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
     <meta charset="UTF-8">
     <meta name="description"
@@ -12,9 +12,12 @@
         rel="stylesheet">
     <link rel="stylesheet" href="css/main.min.css">
     <script>
-        /* Constants for FLO blockchain operations !!Make sure to add this at begining!! */
+        /* Constants for FLO blockchain operations !!Make sure to add this at beginning!! */
         const floGlobals = {
-            blockchain: "FLO"
+            blockchain: "FLO",
+            tokenApiUrl: 'https://ranchimallflo.duckdns.org',
+            tokenURL: 'https://ranchimallflo.duckdns.org/',
+            expirationDays: 60,
         }
     </script>
     <script src="scripts/components.js" defer></script>
@@ -22,8 +25,10 @@
     <script src="scripts/lib.js"></script>
     <script src="scripts/floCrypto.js"></script>
     <script src="scripts/floBlockchainAPI.js"></script>
+    <script src="scripts/floTokenAPI.js"></script>
     <script src="scripts/compactIDB.js"></script>
     <script src="scripts/flo-webwallet.js"></script>
+    <script src="https://unpkg.com/uhtml@3.0.1/es.js"></script>
     <script>
         function onLoadStartUp() {
             var IDBObjects = {
@@ -32,25 +37,49 @@
                 pinnedIds: {},
                 transactions: {}
             }
-            compactIDB.initDB("FLOwebWallet", IDBObjects).then(result => {
-                showPage(window.location.hash)
+            loader()
+            compactIDB.initDB("FLOwebWallet", IDBObjects).then(async result => {
                 render.savedIds();
+                if (!floGlobals.tokens || !floGlobals.smartContracts) {
+                    fetchJSON(`${floGlobals.tokenApiUrl}/api/v2/tokenSmartContractList`).then(({ tokens, smartContracts }) => {
+                        floGlobals.scMap = new Map()
+                        floGlobals.tokens = tokens.sort((a, b) => a.localeCompare(b))
+                        floGlobals.smartContracts = smartContracts
+                            .filter(sc => sc.status === 'active')
+                            .sort((a, b) => a.contractName.localeCompare(b.contractName))
+                        floGlobals.smartContracts.forEach((sc, index) => {
+                            floGlobals.scMap.set(`${sc.contractName}_${sc.contractAddress}`, index)
+                        })
+                        routeTo(window.location.hash, { firstLoad: true })
+                    }).catch(e => {
+                        console.error(e)
+                        notify('Error fetching tokens', 'error')
+                    }).finally(() => {
+                        loader(false)
+                    })
+                }
                 console.log(result)
             }).catch(error => console.error(error))
         }
     </script>
 </head>
 
-<body onload="onLoadStartUp()" class="hide">
+<body onload="onLoadStartUp()" class="hidden">
     <sm-notifications id="notification_drawer"></sm-notifications>
     <sm-popup id="confirmation_popup">
         <h4 id="confirm_title"></h4>
-        <p id="confirm_message"></p>
+        <p id="confirm_message" class="breakable"></p>
         <div class="flex align-center gap-0-5 margin-left-auto">
             <button class="button cancel-button">Cancel</button>
             <button class="button button--primary confirm-button">OK</button>
         </div>
     </sm-popup>
+    <div id="loader" class="hidden">
+        <sm-spinner></sm-spinner>
+        <p>
+            Loading FLO Wallet
+        </p>
+    </div>
     <div id="main_card">
         <header id="main_header" class="flex align-center space-between">
             <div class="flex align-center">
@@ -83,7 +112,7 @@
                     <span style="font-size: 0.8rem;">
                         RanchiMall
                     </span>
-                    <h4>FLO Web Wallet</h4>
+                    <h4>FLO Wallet</h4>
                 </div>
             </div>
             <theme-toggle></theme-toggle>
@@ -91,7 +120,7 @@
         <div id="pages_container">
             <div id="home" class="page flex h-100">
                 <div class="flex direction-column gap-2 h-100">
-                    <section class="flex">
+                    <section id="primary_actions_wrapper">
                         <button id="gen_new_addr_btn" class="button primary-action interact">
                             <svg class="icon" xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 24 24"
                                 height="24px" viewBox="0 0 24 24" width="24px" fill="#000000">
@@ -105,7 +134,7 @@
                                     </g>
                                 </g>
                             </svg>
-                            Generate FLO ID
+                            Generate FLO address
                         </button>
                         <button id="retrieve_addr_btn" class="button primary-action interact"
                             onclick="openPopup('retrieve_flo_id_popup')">
@@ -115,7 +144,16 @@
                                 <path
                                     d="M14 12c0-1.1-.9-2-2-2s-2 .9-2 2 .9 2 2 2 2-.9 2-2zm-2-9c-4.97 0-9 4.03-9 9H0l4 4 4-4H5c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.51 0-2.91-.49-4.06-1.3l-1.42 1.44C8.04 20.3 9.94 21 12 21c4.97 0 9-4.03 9-9s-4.03-9-9-9z" />
                             </svg>
-                            Retrieve FLO ID
+                            Retrieve FLO address
+                        </button>
+                        <button class="button primary-action interact" onclick="openPopup('check_balance_popup')">
+                            <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
+                                width="24px" fill="#000000">
+                                <path d="M0 0h24v24H0z" fill="none" />
+                                <path
+                                    d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
+                            </svg>
+                            Check balance
                         </button>
                     </section>
                     <section class="flex direction-column h-100">
@@ -127,7 +165,7 @@
                                     <path
                                         d="M21 5v14h2V5h-2zm-4 14h2V5h-2v14zM14 5H2c-.55 0-1 .45-1 1v12c0 .55.45 1 1 1h12c.55 0 1-.45 1-1V6c0-.55-.45-1-1-1zM8 7.75c1.24 0 2.25 1.01 2.25 2.25S9.24 12.25 8 12.25 5.75 11.24 5.75 10 6.76 7.75 8 7.75zM12.5 17h-9v-.75c0-1.5 3-2.25 4.5-2.25s4.5.75 4.5 2.25V17z" />
                                 </svg>
-                                <h4>Saved FLO IDs</h4>
+                                <h4>Saved FLO addresses</h4>
                             </div>
                             <p class="flex align-center">
                                 <svg class="icon margin-right-0-5" style="fill: #ffc107;"
@@ -137,7 +175,7 @@
                                     <path
                                         d="M9 21c0 .5.4 1 1 1h4c.6 0 1-.5 1-1v-1H9v1zm3-19C8.1 2 5 5.1 5 9c0 2.4 1.2 4.5 3 5.7V17c0 .5.4 1 1 1h6c.6 0 1-.5 1-1v-2.3c1.8-1.3 3-3.4 3-5.7 0-3.9-3.1-7-7-7z" />
                                 </svg>
-                                <span id="saved_ids_tip">Click 'Add FLO ID' to add a new FLO ID.</span>
+                                <span id="saved_ids_tip">Click 'Add FLO address' to add a new FLO address.</span>
                             </p>
                         </div>
                         <ul id="saved_ids_list" class="observe-empty-state grid"></ul>
@@ -183,7 +221,7 @@
                                 <rect class="ee8c2e6d-b8f3-4b81-80ab-31d470d121b9" x="93.12" y="179.87" width="80.09"
                                     height="9.03" rx="1.92" />
                             </svg>
-                            <h4>No Saved FLO ID</h4>
+                            <h4>No Saved FLO address</h4>
                         </div>
                     </section>
                 </div>
@@ -194,10 +232,10 @@
                         <path
                             d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
                     </svg>
-                    Add FLO ID
+                    Add FLO address
                 </button>
             </div>
-            <div id="transactions" class="hide page">
+            <div id="transactions" class="hidden page">
                 <header class="grid">
                     <div class="grid align-center w-100">
                         <a href="#/home" class="flex interact icon-only">
@@ -207,9 +245,8 @@
                                 <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
                             </svg>
                         </a>
-                        <h4 id="flo_id_name"></h4>
-                        <button class="icon-only" style="margin-left:auto"
-                            onclick="render.transactions(pagesData.params.id)">
+                        <button class="icon-only" style="margin-left:auto" onclick="render.transactions()"
+                            title="Refresh">
                             <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
                                 width="24px" fill="#000000">
                                 <path d="M0 0h24v24H0z" fill="none" />
@@ -218,8 +255,9 @@
                             </svg>
                         </button>
                     </div>
+                    <div id="queried_flo_address"></div>
                 </header>
-                <section id="transactions_scroller" class="grid gap-2" style="overflow-y: auto;padding: 0 1.5rem;">
+                <section id="transactions_scroller" class="grid gap-2" style="overflow-y: auto;padding: 0 1rem;">
                     <div id="transactions_hero_section" class="grid gap-2"
                         style="background-color: rgba(var(--text-color), 0.03); padding: 1.5rem 1rem; border-radius: 0.5rem;">
                         <div class="flex align-center">
@@ -245,7 +283,7 @@
                                 <span id="flo_balance"></span>
                             </div>
                         </div>
-                        <div id="tokens" class="grid gap-0-5 hide">
+                        <div id="tokens" class="grid gap-0-5 hidden">
                             <div class="flex align-center">
                                 <svg class="icon margin-right-0-5" xmlns="http://www.w3.org/2000/svg" height="24px"
                                     viewBox="0 0 24 24" width="24px" fill="#000000">
@@ -277,7 +315,12 @@
                                 <sm-chip value="all">All</sm-chip>
                             </sm-chips>
                         </div>
-                        <ul id="transactions_list" class="flex"></ul>
+                        <ul id="transactions_list" class="flex observe-empty-state"></ul>
+                        <div class="empty-state">
+                            <h4>
+                                Looks a bit empty here, no transactions yet.
+                            </h4>
+                        </div>
                     </div>
                 </section>
                 <div class="empty-state justify-center align-center h-100">
@@ -286,7 +329,7 @@
                         <span>Loading transactions</span>
                     </div>
                 </div>
-                <button id="scroll_to_top" class="fab hide" onclick="backToTop()">
+                <button id="scroll_to_top" class="fab hidden" onclick="backToTop()">
                     <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px"
                         fill="#000000">
                         <path d="M0 0h24v24H0z" fill="none" />
@@ -294,7 +337,7 @@
                     </svg>
                 </button>
             </div>
-            <div id="send" class="page hide gap-1">
+            <div id="send" class="page hidden gap-1">
                 <div class="grid full-bleed">
                     <h3>Send</h3>
                     <p>Perform FLO blockchain transactions</p>
@@ -304,32 +347,35 @@
                         <div id="balance_card">
                             <div class="flex align-center space-between">
                                 <h5>Balance</h5>
-                                <button id="refresh_balance_button" class="button button--small button--colored hide"
-                                    onclick="checkSenderBalance()">Refresh</button>
-                            </div>
-                            <div class="flex align-end gap-0-3">
-                                <b id="sender_balance" style="font-size: 2.5rem;line-height: 1;">0</b>
-                                <span>FLO</span>
                             </div>
                             <p style="line-height: 1.2; opacity: 0.7;">
-                                Sender balance will be shown once you enter a valid address
+                                Sender balance will be shown once you enter sender private key
                             </p>
                         </div>
-                        <sm-input id="getBal_addr" class="w-100" placeholder="Sender FLO ID" error-text="Invalid FLO ID"
-                            data-flo-id="" animate required>
-                            <button slot="right" class="icon-only" onclick="showFloIdPicker('sender')"
-                                title="Select from saved IDs">
-                                <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
-                                    width="24px" fill="#000000">
+                        <sm-input id="get_private_key_field" placeholder="Sender's private key" class="password-field"
+                            type="password" error-text="Invalid private key" data-private-key required autofocus>
+                            <label slot="right" class="interact">
+                                <input type="checkbox" class="hidden" readonly
+                                    onchange="togglePrivateKeyVisibility(this)">
+                                <svg class="icon invisible" xmlns="http://www.w3.org/2000/svg" height="24px"
+                                    viewBox="0 0 24 24" width="24px" fill="#000000">
+                                    <title>Hide password</title>
+                                    <path d="M0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0z" fill="none" />
+                                    <path
+                                        d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z" />
+                                </svg>
+                                <svg class="icon visible" xmlns="http://www.w3.org/2000/svg" height="24px"
+                                    viewBox="0 0 24 24" width="24px" fill="#000000">
+                                    <title>Show password</title>
                                     <path d="M0 0h24v24H0z" fill="none" />
                                     <path
-                                        d="M21 5v14h2V5h-2zm-4 14h2V5h-2v14zM14 5H2c-.55 0-1 .45-1 1v12c0 .55.45 1 1 1h12c.55 0 1-.45 1-1V6c0-.55-.45-1-1-1zM8 7.75c1.24 0 2.25 1.01 2.25 2.25S9.24 12.25 8 12.25 5.75 11.24 5.75 10 6.76 7.75 8 7.75zM12.5 17h-9v-.75c0-1.5 3-2.25 4.5-2.25s4.5.75 4.5 2.25V17z" />
+                                        d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
                                 </svg>
-                            </button>
+                            </label>
                         </sm-input>
-                        <sm-input id="receiver" class="w-100" placeholder="Receiver's FLO ID"
-                            error-text="Invalid FLO ID" data-flo-id="" animate required>
-                            <button slot="right" class="icon-only" onclick="showFloIdPicker('receiver')"
+                        <sm-input id="receiver" class="w-100" placeholder="Receiver's FLO address"
+                            error-text="Invalid FLO address" data-flo-address="" animate required>
+                            <button slot="right" class="icon-only" onclick="openPopup('saved_ids_popup')"
                                 title="Select from saved IDs">
                                 <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
                                     width="24px" fill="#000000">
@@ -341,21 +387,207 @@
                         </sm-input>
                     </div>
                     <div class="grid gap-1">
-                        <sm-input id="amount" type="number" placeholder="Amount" step="0.00001" min="0.00001"
-                            error-text="Invalid amount" animate required>
+                        <sm-input id="tx_flo_amount" type="number" placeholder="FLO amount" step="0.00000001"
+                            min="0.00000001" error-text="Invalid amount" animate required>
                         </sm-input>
-                        <sm-textarea id="flo_data_textarea" placeholder="FLO data" rows="4" maxlength="1040" animate>
-                        </sm-textarea>
-                        <div id="show_character_count">1040/1040</div>
-                        <p id="flo_data_status"></p>
-                        <button class="button button--primary hide" id="fix_invalid_button"
+                        <sm-input id="tx_token_amount" type="number" class="hidden" placeholder="Token amount"
+                            step="0.00000001" min="0.00000001" error-text="Invalid amount" animate required disabled>
+                        </sm-input>
+                        <div id="flo_data_wrapper" class="grid gap-0-5">
+                            <sm-textarea id="flo_data_textarea" placeholder="FLO data" rows="8" maxlength="1040"
+                                animate>
+                            </sm-textarea>
+                            <div id="show_character_count">1040/1040</div>
+                            <p id="flo_data_status"></p>
+                        </div>
+                        <button class="button button--primary hidden" id="fix_invalid_button"
                             onclick="removeInvalid()">Fix</button>
-                        <button class="button button--primary cta" id="sendBtn" type="submit"
-                            onclick="openPopup('get_private_key_popup')" disabled>Send</button>
+                        <div class="multi-state-button">
+                            <button id="send_button" class="button button--primary cta" type="submit"
+                                onclick="initTransaction()">Send</button>
+                        </div>
                     </div>
                 </sm-form>
             </div>
-            <div id="settings" class="page hide gap-2">
+            <div id="smartcontracts" class="page hidden">
+                <div class="grid gap-2">
+                    <div class="grid full-bleed">
+                        <h3>Smart Contracts</h3>
+                        <p>
+                            Create, participate and manage smart contracts on FLO blockchain.
+                        </p>
+                    </div>
+                    <div class="grid gap-1">
+                        <h4>Actions</h4>
+                        <ul id="smart_contract_actions" class="flex align-center flex-wrap gap-0-5">
+                            <li>
+                                <a class="button smart-contract-action" href="#/smartcontracts/deposit">
+                                    <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px"
+                                        viewBox="0 0 24 24" width="24px" fill="#000000">
+                                        <path d="M0 0h24v24H0V0z" fill="none" />
+                                        <path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z" />
+                                    </svg>
+                                    <span>Deposit</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a class="button smart-contract-action" href="#/smartcontracts/participate">
+                                    <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px"
+                                        viewBox="0 0 24 24" width="24px" fill="#000000">
+                                        <path d="M0 0h24v24H0z" fill="none" />
+                                        <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
+                                    </svg>
+                                    <span>Participate</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a class="button smart-contract-action" href="#/smartcontracts/updateprice">
+                                    <svg class="icon" xmlns="http://www.w3.org/2000/svg"
+                                        enable-background="new 0 0 24 24" height="24px" viewBox="0 0 24 24" width="24px"
+                                        fill="#000000">
+                                        <rect fill="none" height="24" width="24" />
+                                        <path
+                                            d="M12,2C6.48,2,2,6.48,2,12c0,5.52,4.48,10,10,10s10-4.48,10-10C22,6.48,17.52,2,12,2z M12.06,19v-2.01c-0.02,0-0.04,0-0.06,0 c-1.28,0-2.56-0.49-3.54-1.46c-1.71-1.71-1.92-4.35-0.64-6.29l1.1,1.1c-0.71,1.33-0.53,3.01,0.59,4.13c0.7,0.7,1.62,1.03,2.54,1.01 v-2.14l2.83,2.83L12.06,19z M16.17,14.76l-1.1-1.1c0.71-1.33,0.53-3.01-0.59-4.13C13.79,8.84,12.9,8.5,12,8.5c-0.02,0-0.04,0-0.06,0 v2.15L9.11,7.83L11.94,5v2.02c1.3-0.02,2.61,0.45,3.6,1.45C17.24,10.17,17.45,12.82,16.17,14.76z" />
+                                    </svg>
+                                    <span>Update price</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a class="button smart-contract-action" href="#/smartcontracts/trigger">
+                                    <svg class="icon" xmlns="http://www.w3.org/2000/svg"
+                                        enable-background="new 0 0 24 24" height="24px" viewBox="0 0 24 24" width="24px"
+                                        fill="#000000">
+                                        <rect fill="none" height="24" width="24" />
+                                        <path
+                                            d="M14.59,7.41L18.17,11H6v2h12.17l-3.59,3.59L16,18l6-6l-6-6L14.59,7.41z M2,6v12h2V6H2z" />
+                                    </svg>
+                                    <span>Trigger</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="grid gap-1">
+                        <h4>Creation templates</h4>
+                        <ul id="smart_contract_creation_templates">
+                            <li>
+                                <a class="button smart-contract-template"
+                                    href="#/smartcontracts/create?type=one-time-event&subtype=time-trigger">
+                                    <h4>
+                                        Time trigger (One time event)
+                                    </h4>
+                                    <p>
+                                        Suitable for time-specific events like crowdfunding.
+                                    </p>
+                                    <svg class="icon margin-left-0-5" xmlns="http://www.w3.org/2000/svg" height="24px"
+                                        viewBox="0 0 24 24" width="24px" fill="#000000">
+                                        <path d="M0 0h24v24H0z" fill="none" />
+                                        <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
+                                    </svg>
+                                </a>
+                            </li>
+                            <li>
+                                <a class="button smart-contract-template"
+                                    href="#/smartcontracts/create?type=one-time-event&subtype=external-trigger">
+                                    <h4>
+                                        External trigger (One time event)
+                                    </h4>
+                                    <p>
+                                        Suitable for externally triggered events like voting.
+                                    </p>
+                                    <svg class="icon margin-left-0-5" xmlns="http://www.w3.org/2000/svg" height="24px"
+                                        viewBox="0 0 24 24" width="24px" fill="#000000">
+                                        <path d="M0 0h24v24H0z" fill="none" />
+                                        <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
+                                    </svg>
+                                </a>
+                            </li>
+                            <li>
+                                <a class="button smart-contract-template"
+                                    href="#/smartcontracts/create?type=continuous-event&subtype=tokenswap">
+                                    <h4>
+                                        Continuous event
+                                    </h4>
+                                    <p>
+                                        Suitable for ongoing processes involving multiple participants, such as
+                                        token swaps.
+                                    </p>
+                                    <svg class="icon margin-left-0-5" xmlns="http://www.w3.org/2000/svg" height="24px"
+                                        viewBox="0 0 24 24" width="24px" fill="#000000">
+                                        <path d="M0 0h24v24H0z" fill="none" />
+                                        <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
+                                    </svg>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="grid hidden gap-1">
+                    <div class="flex gap-0-5 align-center">
+                        <a class="button icon-only" href="#/smartcontracts">
+                            <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
+                                width="24px" fill="#000000">
+                                <path d="M0 0h24v24H0z" fill="none" />
+                                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+                            </svg>
+                        </a>
+                        <h4>Create smart contract</h4>
+                    </div>
+                    <sm-form id="smart_contract_creation_form"></sm-form>
+                </div>
+                <div class="grid hidden gap-1">
+                    <div class="flex gap-0-5 align-center">
+                        <a class="button icon-only" href="#/smartcontracts">
+                            <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
+                                width="24px" fill="#000000">
+                                <path d="M0 0h24v24H0z" fill="none" />
+                                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+                            </svg>
+                        </a>
+                        <h4>Deposit</h4>
+                    </div>
+                    <sm-form id="smart_contract_deposit_form"></sm-form>
+                </div>
+                <div class="grid hidden gap-1">
+                    <div class="flex gap-0-5 align-center">
+                        <a class="button icon-only" href="#/smartcontracts">
+                            <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
+                                width="24px" fill="#000000">
+                                <path d="M0 0h24v24H0z" fill="none" />
+                                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+                            </svg>
+                        </a>
+                        <h4>Participate</h4>
+                    </div>
+                    <sm-form id="smart_contract_participate_form"></sm-form>
+                </div>
+                <div class="grid hidden gap-1">
+                    <div class="flex gap-0-5 align-center">
+                        <a class="button icon-only" href="#/smartcontracts">
+                            <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
+                                width="24px" fill="#000000">
+                                <path d="M0 0h24v24H0z" fill="none" />
+                                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+                            </svg>
+                        </a>
+                        <h4>Update price</h4>
+                    </div>
+                    <sm-form id="smart_contract_update_form"></sm-form>
+                </div>
+                <div class="grid hidden gap-1">
+                    <div class="flex gap-0-5 align-center">
+                        <a class="button icon-only" href="#/smartcontracts">
+                            <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
+                                width="24px" fill="#000000">
+                                <path d="M0 0h24v24H0z" fill="none" />
+                                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+                            </svg>
+                        </a>
+                        <h4>Trigger</h4>
+                    </div>
+                    <sm-form id="smart_contract_trigger_form"></sm-form>
+                </div>
+            </div>
+            <div id="settings" class="page hidden gap-2">
                 <h3>Settings</h3>
                 <section class="grid gap-1">
                     <h4>Accent color</h4>
@@ -401,6 +633,23 @@
                     </a>
                 </li>
                 <li>
+                    <a href="#/smartcontracts" class="nav-item interact" title='Send FLO data'>
+                        <svg class="icon" xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 24 24"
+                            height="24px" viewBox="0 0 24 24" width="24px" fill="#000000">
+                            <path d="M0,0h24v24H0V0z" fill="none" />
+                            <g>
+                                <path
+                                    d="M19.5,3.5L18,2l-1.5,1.5L15,2l-1.5,1.5L12,2l-1.5,1.5L9,2L7.5,3.5L6,2v14H3v3c0,1.66,1.34,3,3,3h12c1.66,0,3-1.34,3-3V2 L19.5,3.5z M19,19c0,0.55-0.45,1-1,1s-1-0.45-1-1v-3H8V5h11V19z" />
+                                <rect height="2" width="6" x="9" y="7" />
+                                <rect height="2" width="2" x="16" y="7" />
+                                <rect height="2" width="6" x="9" y="10" />
+                                <rect height="2" width="2" x="16" y="10" />
+                            </g>
+                        </svg>
+                        <span class="nav-item__title">Smart Contracts</span>
+                    </a>
+                </li>
+                <li>
                     <a href="#/settings" class="nav-item interact">
                         <svg class="icon" xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 24 24"
                             height="24px" viewBox="0 0 24 24" width="24px" fill="#000000">
@@ -430,10 +679,10 @@
             <h3>Add address</h3>
         </header>
         <sm-form>
-            <sm-input id="floAddr" placeholder="FLO ID" error-text="Invalid FLO ID" autofocus data-flo-id animate
-                required>
+            <sm-input id="flo_addr_to_save" placeholder="FLO address" error-text="Invalid FLO address" autofocus
+                data-flo-address animate required>
             </sm-input>
-            <sm-input id="addrLabel" placeholder="Name" animate></sm-input>
+            <sm-input id="label_to_save" placeholder="Name" animate></sm-input>
             <button class="button button--primary cta" type="submit" onclick="saveFloId()" disabled>Add</button>
         </sm-form>
     </sm-popup>
@@ -451,13 +700,13 @@
         </header>
         <section class="grid gap-1-5">
             <div class="grid gap-0-5">
-                <h5>FLO ID</h5>
+                <h5>FLO address</h5>
                 <sm-copy id="edit_saved_id"></sm-copy>
             </div>
             <sm-form>
-                <sm-input id="newAddrLabel" placeholder="Name" autofocus animate required></sm-input>
+                <sm-input id="new_addr_label" placeholder="Name" autofocus animate required></sm-input>
                 <div class="flex align-center space-between">
-                    <button class="button icon-only" title="Delete this FLO ID?" onclick="deleteSaved()">
+                    <button class="button icon-only" title="Delete this FLO address?" onclick="deleteSaved()">
                         <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
                             width="24px" fill="#000000">
                             <path d="M0 0h24v24H0z" fill="none" />
@@ -507,18 +756,19 @@
         </header>
         <section class="grid gap-1-5">
             <div class="grid gap-0-5">
-                <h4>Forgot FLO ID?</h4>
-                <p>In case of FLO ID being lost and you have the private key associated with it. You can recover it.</p>
+                <h4>Forgot FLO address?</h4>
+                <p>In case of FLO address being lost and you have the private key associated with it. You can recover
+                    it.</p>
             </div>
             <sm-form>
-                <div id="recovered_flo_id_wrapper" class="hide">
-                    <h5>Recovered FLO ID</h5>
+                <div id="recovered_flo_id_wrapper" class="hidden">
+                    <h5>Recovered FLO address</h5>
                     <sm-copy id="recovered_flo_id"></sm-copy>
                 </div>
                 <sm-input id="retrieve_flo_id_field" type="password" error-text="Invalid private key"
-                    placeholder="Private key" class="password-field" required autofocus>
+                    placeholder="Private key" class="password-field" data-private-key required autofocus>
                     <label slot="right" class="interact">
-                        <input type="checkbox" class="hide" readonly onchange="togglePrivateKeyVisibility(this)">
+                        <input type="checkbox" class="hidden" readonly onchange="togglePrivateKeyVisibility(this)">
                         <svg class="icon invisible" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
                             width="24px" fill="#000000">
                             <title>Hide password</title>
@@ -539,6 +789,30 @@
             </sm-form>
         </section>
     </sm-popup>
+    <sm-popup id="check_balance_popup">
+        <header slot="header" class="popup__header">
+            <button class="popup__header__close justify-self-start" onclick="closePopup()">
+                <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px"
+                    fill="#000000">
+                    <path d="M0 0h24v24H0V0z" fill="none" />
+                    <path
+                        d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" />
+                </svg>
+            </button>
+            <h3>Check balance</h3>
+        </header>
+        <sm-form id="check_balance_form">
+            <sm-input id="check_balance_field" type="text" error-text="Invalid FLO address" placeholder="FLO address"
+                data-flo-address="" required autofocus>
+            </sm-input>
+            <div class="multi-state-button">
+                <button id="check_balance_button" class="button button--primary cta" type="submit"
+                    onclick="checkBalance()" disabled>Check</button>
+            </div>
+        </sm-form>
+        <div id="balance_wrapper" class="hidden grid gap-0-5" style="margin-top: 2rem">
+        </div>
+    </sm-popup>
     <sm-popup id="saved_ids_popup">
         <header slot="header" class="popup__header">
             <button class="popup__header__close justify-self-start" onclick="closePopup()">
@@ -556,11 +830,11 @@
             <ul id="saved_ids_picker_list" class="observe-empty-state grid gap-0-5 h-100" style="overflow-y: auto;">
             </ul>
             <div class="empty-state">
-                <h4>No saved FLO IDs</h4>
+                <h4>No saved FLO addresses</h4>
             </div>
         </section>
     </sm-popup>
-    <sm-popup id="get_private_key_popup">
+    <sm-popup id="transaction_result_popup">
         <header slot="header" class="popup__header">
             <button class="popup__header__close justify-self-start" onclick="closePopup()">
                 <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px"
@@ -571,61 +845,7 @@
                 </svg>
             </button>
         </header>
-        <div class="grid gap-1-5 h-100" id="get_private_key">
-            <svg class="icon" xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 24 24" height="24px"
-                viewBox="0 0 24 24" width="24px" fill="#000000">
-                <g>
-                    <rect fill="none" height="24" width="24" />
-                </g>
-                <g>
-                    <path
-                        d="M21,10h-8.35C11.83,7.67,9.61,6,7,6c-3.31,0-6,2.69-6,6s2.69,6,6,6c2.61,0,4.83-1.67,5.65-4H13l2,2l2-2l2,2l4-4.04L21,10z M7,15c-1.65,0-3-1.35-3-3c0-1.65,1.35-3,3-3s3,1.35,3,3C10,13.65,8.65,15,7,15z" />
-                </g>
-            </svg>
-            <h4>Enter sender's private key</h4>
-            <sm-form>
-                <sm-input id="get_private_key_field" class="password-field " type="password" required autofocus>
-                    <label slot="right" class="interact">
-                        <input type="checkbox" class="hide" readonly onchange="togglePrivateKeyVisibility(this)">
-                        <svg class="icon invisible" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
-                            width="24px" fill="#000000">
-                            <title>Hide password</title>
-                            <path d="M0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0z" fill="none" />
-                            <path
-                                d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z" />
-                        </svg>
-                        <svg class="icon visible" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
-                            width="24px" fill="#000000">
-                            <title>Show password</title>
-                            <path d="M0 0h24v24H0z" fill="none" />
-                            <path
-                                d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
-                        </svg>
-                    </label>
-                </sm-input>
-                <div class="multi-state-button">
-                    <button id="confirm_transaction_button" class="button button--primary cta" type="submit"
-                        onclick="sendMessage()">Confirm</button>
-                    <sm-spinner class="hide"></sm-spinner>
-                </div>
-            </sm-form>
-        </div>
-        <div id="transaction_result" class="hide">
-            <svg class="icon icon--success" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
-                width="24px" fill="#000000">
-                <path d="M0 0h24v24H0z" fill="none" />
-                <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z" />
-            </svg>
-            <svg class="icon icon--failed" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24"
-                width="24px" fill="#000000">
-                <path d="M0 0h24v24H0z" fill="none" />
-                <path
-                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-            </svg>
-            <h3 id="transaction_result__title"></h3>
-            <p id="transaction_result__description"></p>
-            <a id="transaction_link" style="margin-top: 1.5rem;" target="_blank">See transaction on blockchain</a>
-        </div>
+        <div id="transaction_result"></div>
     </sm-popup>
     <template id="saved_id_template">
         <li class="saved-id grid interact" tabindex="0">
@@ -641,7 +861,7 @@
             <h4 class="saved-id__label"></h4>
             <div class="grid align-center" style="grid-template-columns: 1fr auto;">
                 <div class="saved-id__flo-id overflow-ellipsis"></div>
-                <button class="copy-saved-id icon-only margin-left-0-5" title="Copy FLO ID">
+                <button class="copy-saved-id icon-only margin-left-0-5" title="Copy FLO address">
                     <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px"
                         fill="#000000">
                         <path d="M0 0h24v24H0z" fill="none" />
@@ -675,6 +895,7 @@
     </template>
     <script>
         // Global variables
+        const { html, render: renderElem } = uhtml;
         const domRefs = {};
         const currentYear = new Date().getFullYear();
 
@@ -714,6 +935,9 @@
                     return domRefs[elementId].ref;
                 }
             }
+        }
+        function $(selector) {
+            return document.querySelector(selector);
         }
 
         // returns dom with specified element
@@ -771,8 +995,6 @@
                     getRef('saved_ids_picker_list').append(frag)
                     getRef('search_saved_ids_picker').focusIn()
                     break;
-                case 'get_private_key_popup':
-                    break;
             }
         })
         document.addEventListener('popupclosed', e => {
@@ -782,14 +1004,15 @@
                     getRef('saved_ids_picker_list').innerHTML = ''
                     getRef('search_saved_ids_picker').value = ''
                     break;
-                case 'get_private_key_popup':
-                    getRef('get_private_key').classList.remove('hide')
-                    getRef('transaction_result').classList.add('hide')
-                    getRef('confirm_transaction_button').classList.remove('hide')
-                    getRef('confirm_transaction_button').nextElementSibling.classList.add('hide')
+                case 'transaction_result_popup':
+                    renderElem(getRef('transaction_result'), html``)
                     break;
                 case 'retrieve_flo_id_popup':
-                    getRef('recovered_flo_id_wrapper').classList.add('hide')
+                    getRef('recovered_flo_id_wrapper').classList.add('hidden')
+                    break;
+                case 'check_balance_popup':
+                    getRef('balance_wrapper').classList.add('hidden')
+                    getRef('check_balance_form')._checkValidity()
                     break;
             }
         })
@@ -882,6 +1105,31 @@
                 }
             })
         }
+
+        function buttonLoader(id, show) {
+            const button = typeof id === 'string' ? document.getElementById(id) : id;
+            button.disabled = show;
+            const animOptions = {
+                duration: 200,
+                fill: 'forwards',
+                easing: 'ease'
+            }
+            if (show) {
+                button.parentNode.append(createElement('sm-spinner'))
+                button.animate([
+                    {
+                        clipPath: 'circle(100%)',
+                    },
+                    {
+                        clipPath: 'circle(0)',
+                    },
+                ], animOptions)
+            } else {
+                button.getAnimations().forEach(anim => anim.cancel())
+                const potentialTarget = button.parentNode.querySelector('sm-spinner')
+                if (potentialTarget) potentialTarget.remove();
+            }
+        }
         // detect browser version
         function detectBrowser() {
             let ua = navigator.userAgent,
@@ -899,7 +1147,7 @@
             if ((tem = ua.match(/version\/(\d+)/i)) != null) M.splice(1, 1, tem[1]);
             return M.join(' ');
         }
-        window.addEventListener('hashchange', e => showPage(window.location.hash))
+        window.addEventListener('hashchange', e => routeTo(window.location.hash))
         window.addEventListener("load", () => {
             const [browserName, browserVersion] = detectBrowser().split(' ');
             const supportedVersions = {
@@ -914,9 +1162,7 @@
             } else {
                 notify('Browser is not fully compatible, some features may not work. for best experience please use Chrome, Edge, Firefox or Safari', 'error')
             }
-            document.body.classList.remove('hide')
-            document.querySelectorAll('sm-input[data-flo-id]').forEach(input => input.customValidation = floCrypto.validateAddr)
-            document.querySelectorAll('sm-input[data-private-key]').forEach(input => input.customValidation = floCrypto.getPubKeyHex)
+            document.body.classList.remove('hidden')
             document.addEventListener('keyup', (e) => {
                 if (e.key === 'Escape') {
                     closePopup()
@@ -979,26 +1225,19 @@
         }
 
         let tempData
-        async function showPage(targetPage, options = {}) {
-            const { firstLoad, hashChange, isPreview } = options
+        async function routeTo(targetPage, options = {}) {
+            const { firstLoad, hashChange } = options
             let pageId
             let params = {}
             let searchParams
+            let wildcards
             if (targetPage === '') {
                 pageId = 'home'
             } else {
                 if (targetPage.includes('/')) {
-                    if (targetPage.includes('?')) {
-                        const splitAddress = targetPage.split('?')
-                        searchParams = splitAddress.pop()
-                        const pages = splitAddress.pop().split('/')
-                        pageId = pages[1]
-                        subPageId = pages[2]
-                    } else {
-                        const pages = targetPage.split('/')
-                        pageId = pages[1]
-                        subPageId = pages[2]
-                    }
+                    let path;
+                    [path, searchParams] = targetPage.split('?');
+                    [, pageId, ...wildcards] = path.split('/')
                 } else {
                     pageId = targetPage
                 }
@@ -1008,16 +1247,296 @@
                 params = Object.fromEntries(urlSearchParams.entries());
             }
             if (pagesData.lastPage !== pageId) {
-                pagesData.lastPage = pageId
+                pagesData.wildcards = wildcards
             }
             if (params)
                 pagesData.params = params
             switch (pageId) {
                 case 'transactions':
-                    render.transactions(params.id).then(() => {
-                        scrollToTopObserver.observe(getRef('transactions_hero_section'))
-                    })
+                    const floId = wildcards[0]
+                    if (floId && floCrypto.validateFloID(floId)) {
+                        render.transactions(floId).then(() => {
+                            if (getRef('transactions_list').firstElementChild) {
+                                scrollToTopObserver.observe(getRef('transactions_list').firstElementChild)
+                                getRef('filter_selector').classList.remove('hidden')
+                            } else {
+                                getRef('filter_selector').classList.add('hidden')
+                            }
+                        })
+                    } else {
+                        notify('Invalid Flo ID', 'error')
+                    }
                     break;
+                case 'smartcontracts':
+                    const [subpage] = wildcards
+                    const { type, subtype, scName, scAddress } = params
+                    if (subpage) {
+                        switch (subpage) {
+                            case 'create':
+                                if (!type && !subtype)
+                                    getRef('smart_contract_creation_form').classList.add('split-layout')
+                                else
+                                    getRef('smart_contract_creation_form').classList.remove('split-layout')
+                                renderElem(getRef('smart_contract_creation_form'), render.contractCreationForm(type, subtype))
+                                getRef('smart_contract_creation_form').querySelectorAll('[data-flo-address]').forEach(input => {
+                                    input.customValidation = floCrypto.validateFloID
+                                })
+                                switch (type) {
+                                    case 'one-time-event':
+                                        switch (subtype) {
+                                            case 'time-trigger':
+                                                const payeeAddressObserver = new MutationObserver((mutations) => {
+                                                    mutations.forEach((mutation) => {
+                                                        if (mutation.type === 'childList') {
+                                                            if (mutation.addedNodes.length) {
+
+                                                            }
+                                                            if (mutation.removedNodes.length) {
+
+                                                            }
+                                                        }
+                                                    });
+                                                });
+                                                payeeAddressObserver.observe(document.getElementById('payee_container'), { childList: true });
+                                                break;
+                                            case 'external-trigger':
+                                                break;
+                                        }
+                                        break;
+                                    case 'continuous-event':
+
+                                        break;
+                                }
+                                showChildElement('smartcontracts', 1, { entry: slideInLeft, exit: slideOutLeft })
+                                break;
+                            case 'deposit': {
+                                const filteredSmartContracts = filterSmartContracts({ type: 'continuos-event' })
+                                if (filteredSmartContracts.length) {
+                                    let selectedSmartContract = filteredSmartContracts[0] || {}
+                                    if (scName && scAddress)
+                                        selectedSmartContract = getScDetails(scName, scAddress)
+                                    const { price, contractName, contractAddress, acceptingToken, sellingToken, tokenIdentification, contractSubType } = selectedSmartContract
+                                    history.replaceState(null, null, `#/smartcontracts/deposit?scName=${contractName}&scAddress=${contractAddress}`)
+                                    const defaultExpiration = new Date(new Date().getTime() + (floGlobals.expirationDays * 24 * 60 * 60 * 1000))
+                                        .toISOString().slice(0, -8);
+                                    renderElem(getRef('smart_contract_deposit_form'), html`
+                                        <div class="grid gap-0-5">
+                                            <span class="label">Select smart contract</span>
+                                            <sm-select id="selected_smart_contract" onchange="handleSmartContractSelection('deposit')">
+                                                ${render.availableSmartContractOptions(filteredSmartContracts)}
+                                            </sm-select>
+                                        </div>
+                                        <div class="grid gap-0-3">
+                                            <h3>Deposit ${sellingToken} to get ${acceptingToken}</h3>
+                                            <p>Exchange rate: 1 ${sellingToken} = ${price} ${acceptingToken}</p>
+                                                
+                                        </div>
+                                        <div class="grid gap-0-5">
+                                            <span class="label">Amount (${sellingToken})</span>
+                                            <sm-input id="deposit_amount" type="number" type="number" step="0.00000001" min="0.00000001"></sm-input>
+                                        </div>
+                                        <div class="grid gap-0-5">
+                                            <span class="label">Expiration (Time after which unspent amount will be returned)</span>
+                                            <input id="deposit_expiration" value=${defaultExpiration} type="datetime-local" required>
+                                        </div>
+                                        <div class="grid gap-0-5">
+                                            <span class="label">FLO private key</span>
+                                            <sm-input id="depositor_private_key" class="password-field" type="password" error-text="Invalid private key" data-private-key required>
+                                                <label slot="right" class="interact">
+                                                    <input type="checkbox" class="hidden" readonly onchange="togglePrivateKeyVisibility(this)">
+                                                    <svg class="icon invisible" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"> <title>Hide password</title> <path d="M0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0z" fill="none"></path> <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"></path> </svg>
+                                                    <svg class="icon visible" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"> <title>Show password</title> <path d="M0 0h24v24H0z" fill="none"></path> <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"></path> </svg>
+                                                </label>
+                                            </sm-input>
+                                        </div>
+                                        <div class="multi-state-button">
+                                            <button id="deposit_button" class="button button--primary" onclick=${deposit} type="submit" disabled>Deposit</button>
+                                        </div>
+                                    `)
+                                } else {
+                                    renderElem(getRef('smart_contract_deposit_form'), html`
+                                        <div class="grid justify-items-center gap-0-5">
+                                            <svg class="icon icon--big" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0V0z" fill="none"/><circle cx="15.5" cy="9.5" r="1.5"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm0-3.5c.73 0 1.39.19 1.97.53.12-.14.86-.98 1.01-1.14-.85-.56-1.87-.89-2.98-.89-1.11 0-2.13.33-2.99.88.97 1.09.01.02 1.01 1.14.59-.33 1.25-.52 1.98-.52z"/></svg>
+                                            <strong class="justify-self-center">No smart contracts found</strong>
+                                        </div>
+                                    `)
+                                }
+                                showChildElement('smartcontracts', 2, { entry: slideInLeft, exit: slideOutLeft })
+                                break;
+                            }
+                            case 'participate': {
+                                const filteredSmartContracts = filterSmartContracts()
+                                if (filteredSmartContracts.length) {
+                                    let selectedSmartContract = filteredSmartContracts[0] || {}
+                                    if (scName && scAddress)
+                                        selectedSmartContract = getScDetails(scName, scAddress)
+                                    const { price, contractName, contractAddress, acceptingToken, sellingToken, tokenIdentification, userChoices, contractSubType } = selectedSmartContract
+                                    history.replaceState(null, null, `#/smartcontracts/participate?scName=${contractName}&scAddress=${contractAddress}`)
+                                    renderElem(getRef('smart_contract_participate_form'), html`
+                                        <div class="grid gap-0-5">
+                                            <span class="label">Select smart contract</span>
+                                            <sm-select id="selected_smart_contract" onchange="handleSmartContractSelection('participate')">
+                                                ${render.availableSmartContractOptions(filteredSmartContracts, `${contractName}_${contractAddress}`)}
+                                            </sm-select>
+                                        </div>
+                                        ${userChoices ? html`
+                                            <fieldset>
+                                                <legend>Choices</legend>
+                                                <div class="grid gap-0-5">
+                                                    ${userChoices.map(choice => html`
+                                                        <label class="flex align-center">
+                                                            <input type="radio" name="choice" value="${choice}" required>
+                                                            <span class="capitalize">${choice}</span>
+                                                        </label>
+                                                    `)}
+                                                </div>
+                                        `: ''}
+                                        ${contractSubType === 'tokenswap' ? html`
+                                            <div class="grid gap-0-3">
+                                                <h3>Swap ${acceptingToken} with ${sellingToken}</h3>
+                                                <p>Exchange rate: 1 ${sellingToken} = ${price} ${acceptingToken}</p>
+                                            </div>
+                                        `: ''}
+                                        <div class="grid gap-0-5">
+                                            <span id="participation_amount_label" class="label">Participation amount (${acceptingToken || tokenIdentification})</span>
+                                            <sm-input id="participation_amount" type="number" step="0.00000001" min="0.00000001" required></sm-input>
+                                        </div>
+                                        <div class="grid gap-0-5">
+                                            <span class="label">FLO private key</span>
+                                            <sm-input id="participant_private_key" class="password-field" type="password" error-text="Invalid private key" data-private-key required>
+                                                <label slot="right" class="interact">
+                                                    <input type="checkbox" class="hidden" readonly onchange="togglePrivateKeyVisibility(this)">
+                                                    <svg class="icon invisible" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"> <title>Hide password</title> <path d="M0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0z" fill="none"></path> <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"></path> </svg>
+                                                    <svg class="icon visible" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"> <title>Show password</title> <path d="M0 0h24v24H0z" fill="none"></path> <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"></path> </svg>
+                                                </label>
+                                            </sm-input>
+                                        </div>
+                                        <div class="multi-state-button">
+                                            <button id="participate_button" class="button button--primary" onclick=${participate} type="submit" disabled>Participate</button>
+                                        </div>
+                                    `)
+                                } else {
+                                    renderElem(getRef('smart_contract_participate_form'), html`
+                                        <div class="grid justify-items-center gap-0-5">
+                                            <svg class="icon icon--big" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0V0z" fill="none"/><circle cx="15.5" cy="9.5" r="1.5"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm0-3.5c.73 0 1.39.19 1.97.53.12-.14.86-.98 1.01-1.14-.85-.56-1.87-.89-2.98-.89-1.11 0-2.13.33-2.99.88.97 1.09.01.02 1.01 1.14.59-.33 1.25-.52 1.98-.52z"/></svg>
+                                            <strong class="justify-self-center">No smart contracts found</strong>
+                                        </div>
+                                    `)
+                                }
+                                showChildElement('smartcontracts', 3, { entry: slideInLeft, exit: slideOutLeft })
+                                break;
+                            }
+                            case 'updateprice': {
+                                const filteredSmartContracts = filterSmartContracts({ type: 'continuos-event', dynamic: true })
+                                if (filteredSmartContracts.length) {
+                                    let selectedSmartContract = filteredSmartContracts[0] || {}
+                                    if (scName && scAddress)
+                                        selectedSmartContract = getScDetails(scName, scAddress)
+                                    const { contractName, contractAddress, oracle_address, price, acceptingToken } = selectedSmartContract
+                                    history.replaceState(null, null, `#/smartcontracts/participate?scName=${contractName}&scAddress=${contractAddress}`)
+                                    renderElem(getRef('smart_contract_update_form'), html`
+                                        <div class="grid gap-0-5">
+                                            <span class="label">Oracle FLO Address</span>
+                                            <sm-copy id="oracle_address" value=${oracle_address}></sm-copy>
+                                        </div>
+                                        <div class="grid gap-0-5">
+                                            <span class="label">Oracle FLO private key</span>
+                                            <sm-input id="oracle_private_key" class="password-field" type="password" error-text="Invalid private key" data-private-key="" required="">
+                                                <label slot="right" class="interact">
+                                                    <input type="checkbox" class="hidden" readonly="" onchange="togglePrivateKeyVisibility(this)">
+                                                    <svg class="icon invisible" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"> <title>Hide password</title> <path d="M0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0z" fill="none"></path> <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"></path> </svg>
+                                                    <svg class="icon visible" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"> <title>Show password</title> <path d="M0 0h24v24H0z" fill="none"></path> <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"></path> </svg>
+                                                </label>
+                                            </sm-input>
+                                        </div>
+                                        <div class="grid gap-0-5">
+                                            <span class="label">Select smart contract</span>
+                                            <sm-select id="selected_smart_contract" onchange="handleSmartContractSelection('updateprice')">
+                                                ${render.availableSmartContractOptions(filteredSmartContracts, `${contractName}_${contractAddress}`)}
+                                            </sm-select>
+                                        </div>
+                                        <p>
+                                            <span class="label">Current price: </span>
+                                            <span id="current_price" class="label">${price} ${acceptingToken}</span>
+                                        </p>
+                                        <div class="grid gap-0-5">
+                                            <span id="updated_price_label" class="label">Updated price (${acceptingToken})</span>
+                                            <sm-input id="updated_price" type="number" step="0.00000001" min="0.00000001" error-text="Minimum 0.00000001 required" required></sm-input>
+                                        </div>
+                                        <div class="multi-state-button">
+                                            <button id="update_price_button" class="button button--primary" type="submit" onclick=${updatePrice} disabled>Update</button>
+                                        </div>
+                                    `)
+                                } else {
+                                    renderElem(getRef('smart_contract_update_form'), html`
+                                        <div class="grid justify-items-center gap-0-5">
+                                            <svg class="icon icon--big" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0V0z" fill="none"/><circle cx="15.5" cy="9.5" r="1.5"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm0-3.5c.73 0 1.39.19 1.97.53.12-.14.86-.98 1.01-1.14-.85-.56-1.87-.89-2.98-.89-1.11 0-2.13.33-2.99.88.97 1.09.01.02 1.01 1.14.59-.33 1.25-.52 1.98-.52z"/></svg>
+                                            <strong class="justify-self-center">No smart contracts found</strong>
+                                        </div>
+                                    `)
+                                }
+                                showChildElement('smartcontracts', 4, !firstLoad ? { entry: slideInLeft, exit: slideOutLeft } : {})
+                                break;
+                            }
+                            case 'trigger': {
+                                const filteredSmartContracts = filterSmartContracts({ type: 'one-time-event', subType: 'external-trigger' })
+                                if (filteredSmartContracts.length) {
+                                    let selectedSmartContract = filteredSmartContracts[0] || {}
+                                    if (scName && scAddress)
+                                        selectedSmartContract = getScDetails(scName, scAddress)
+                                    const { contractName, contractAddress, price, tokenIdentification, userChoices } = selectedSmartContract
+                                    history.replaceState(null, null, `#/smartcontracts/trigger?scName=${contractName}&scAddress=${contractAddress}`)
+                                    renderElem(getRef('smart_contract_trigger_form'), html`
+                                        <div class="grid gap-0-5">
+                                            <span class="label">Select smart contract</span>
+                                            <sm-select id="selected_smart_contract" onchange="handleSmartContractSelection('trigger')">
+                                                ${render.availableSmartContractOptions(filteredSmartContracts, `${contractName}_${contractAddress}`)}
+                                            </sm-select>
+                                        </div>
+                                        <fieldset>
+                                            <legend>Select outcome</legend>
+                                            <div class="grid gap-0-5">
+                                                ${userChoices.map(choice => html`
+                                                    <label class="flex align-center">
+                                                        <input type="radio" name="outcome" value=${choice} required>
+                                                        <span class="capitalize">${choice}</span>
+                                                    </label>
+                                                `)}
+                                            </div>
+                                        </fieldset>
+                                        <div class="grid gap-0-5">
+                                            <span class="label">Contract address FLO private key</span>
+                                            <sm-input id="trigger_private_key" class="password-field" type="password" error-text="Invalid private key" data-private-key="" required="">
+                                                <label slot="right" class="interact">
+                                                    <input type="checkbox" class="hidden" readonly="" onchange="togglePrivateKeyVisibility(this)">
+                                                    <svg class="icon invisible" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"> <title>Hide password</title> <path d="M0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0z" fill="none"></path> <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"></path> </svg>
+                                                    <svg class="icon visible" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"> <title>Show password</title> <path d="M0 0h24v24H0z" fill="none"></path> <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"></path> </svg>
+                                                </label>
+                                            </sm-input>
+                                        </div>
+                                        <div class="multi-state-button">
+                                            <button id="trigger_contract_button" class="button button--primary" onclick=${triggerContract} type="submit" disabled>Trigger</button>
+                                        </div>
+                                    `)
+                                } else {
+                                    renderElem(getRef('smart_contract_trigger_form'), html`
+                                        <div class="grid justify-items-center gap-0-5">
+                                            <svg class="icon icon--big" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0V0z" fill="none"/><circle cx="15.5" cy="9.5" r="1.5"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm0-3.5c.73 0 1.39.19 1.97.53.12-.14.86-.98 1.01-1.14-.85-.56-1.87-.89-2.98-.89-1.11 0-2.13.33-2.99.88.97 1.09.01.02 1.01 1.14.59-.33 1.25-.52 1.98-.52z"/></svg>
+                                            <strong class="justify-self-center">No smart contracts with external triggers found</strong>
+                                        </div>
+                                    `)
+                                }
+                                showChildElement('smartcontracts', 5, { entry: slideInLeft, exit: slideOutLeft })
+                                break;
+                            }
+                            default:
+                                notify('Invalid page', 'error')
+                        }
+                    } else {
+                        showChildElement('smartcontracts', 0, { entry: slideInRight, exit: slideOutRight })
+                        renderElem(getRef('smart_contract_creation_form'), html``)
+                    }
+                    break
                 default:
                     getRef('transactions_list').innerHTML = ''
                     scrollToTopObserver.disconnect()
@@ -1029,9 +1548,9 @@
             let previousActiveElement = getRef('main_navbar').querySelector('.nav-item--active')
             const currentActiveElement = document.querySelector(`.nav-item[href="#/${pageId}"]`)
             if (currentActiveElement) {
-                if (getRef('main_navbar').classList.contains('hide')) {
+                if (getRef('main_navbar').classList.contains('hidden')) {
                     getRef('main_navbar').classList.remove('hide-away')
-                    getRef('main_navbar').classList.remove('hide')
+                    getRef('main_navbar').classList.remove('hidden')
                     getRef('main_navbar').animate([
                         {
                             transform: isMobileView ? `translateY(100%)` : `translateX(-100%)`,
@@ -1047,7 +1566,7 @@
                         easing: 'ease'
                     })
                 }
-                getRef('main_header').classList.remove('hide')
+                getRef('main_header').classList.remove('hidden')
                 const previousActiveElementIndex = [...getRef('main_navbar').querySelectorAll('.nav-item')].indexOf(previousActiveElement)
                 const currentActiveElementIndex = [...getRef('main_navbar').querySelectorAll('.nav-item')].indexOf(currentActiveElement)
                 const isOnTop = previousActiveElementIndex < currentActiveElementIndex
@@ -1090,7 +1609,7 @@
                 previousActiveElement.classList.remove('nav-item--active');
                 currentActiveElement.classList.add('nav-item--active')
             } else {
-                if (!getRef('main_navbar').classList.contains('hide')) {
+                if (!getRef('main_navbar').classList.contains('hidden')) {
                     getRef('main_navbar').classList.add('hide-away')
                     getRef('main_navbar').animate([
                         {
@@ -1106,14 +1625,19 @@
                         fill: 'forwards',
                         easing: 'ease'
                     }).onfinish = () => {
-                        getRef('main_navbar').classList.add('hide')
+                        getRef('main_navbar').classList.add('hidden')
                     }
-                    getRef('main_header').classList.add('hide')
+                    getRef('main_header').classList.add('hidden')
                 }
             }
-            document.querySelectorAll('.page').forEach(page => page.classList.add('hide'))
-            getRef(pageId).classList.remove('hide')
-            getRef(pageId).animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, fill: 'forwards', easing: 'ease' })
+            if (pagesData.lastPage !== pageId) {
+                document.querySelectorAll('.page').forEach(page => page.classList.add('hidden'))
+                getRef(pageId).classList.remove('hidden')
+                getRef(pageId).animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, fill: 'forwards', easing: 'ease' })
+                pagesData.lastPage = pageId
+            }
+            document.querySelectorAll('sm-input[data-flo-address]').forEach(input => input.customValidation = floCrypto.validateFloID)
+            document.querySelectorAll('sm-input[data-private-key]').forEach(input => input.customValidation = floCrypto.getPubKeyHex)
         }
 
         const indicatorObserver = new IntersectionObserver(entries => {
@@ -1232,13 +1756,137 @@
         mobileQuery.addEventListener('change', handleMobileChange)
 
         handleMobileChange(mobileQuery)
+
+        // fetch data and return json
+        async function fetchJSON(url, options = {}) {
+            const response = await fetch(url, options)
+            const json = await response.json()
+            if (response.ok) {
+                return json
+            } else {
+                throw new Error(json.description)
+            }
+        }
+
+        const slideInLeft = [
+            {
+                opacity: 0,
+                transform: 'translateX(1rem)'
+            },
+            {
+                opacity: 1,
+                transform: 'translateX(0)'
+            }
+        ]
+        const slideOutLeft = [
+            {
+                opacity: 1,
+                transform: 'translateX(0)'
+            },
+            {
+                opacity: 0,
+                transform: 'translateX(-1rem)'
+            },
+        ]
+        const slideInRight = [
+            {
+                opacity: 0,
+                transform: 'translateX(-1rem)'
+            },
+            {
+                opacity: 1,
+                transform: 'translateX(0)'
+            }
+        ]
+        const slideOutRight = [
+            {
+                opacity: 1,
+                transform: 'translateX(0)'
+            },
+            {
+                opacity: 0,
+                transform: 'translateX(1rem)'
+            },
+        ]
+        const slideInDown = [
+            {
+                opacity: 0,
+                transform: 'translateY(-1rem)'
+            },
+            {
+                opacity: 1,
+                transform: 'translateY(0)'
+            },
+        ]
+        const slideOutDown = [
+            {
+                opacity: 1,
+                transform: 'translateY(0)'
+            },
+            {
+                opacity: 0,
+                transform: 'translateY(1rem)'
+            },
+        ]
+        const slideInUp = [
+            {
+                opacity: 0,
+                transform: 'translateY(1rem)'
+            },
+            {
+                opacity: 1,
+                transform: 'translateY(0)'
+            },
+        ]
+        const slideOutUp = [
+            {
+                opacity: 1,
+                transform: 'translateY(0)'
+            },
+            {
+                opacity: 0,
+                transform: 'translateY(-1rem)'
+            },
+        ]
+        function showChildElement(id, index, options = {}) {
+            return new Promise((resolve) => {
+                const { mobileView = false, entry, exit } = options
+                const animOptions = {
+                    duration: 150,
+                    easing: 'ease',
+                    fill: 'forwards'
+                }
+                const parent = typeof id === 'string' ? document.getElementById(id) : id;
+                const visibleElement = [...parent.children].find(elem => !elem.classList.contains(mobileView ? 'hide-on-mobile' : 'hidden'));
+                if (visibleElement === parent.children[index]) return;
+                visibleElement.getAnimations().forEach(anim => anim.cancel())
+                parent.children[index].getAnimations().forEach(anim => anim.cancel())
+                if (visibleElement) {
+                    if (exit) {
+                        visibleElement.animate(exit, animOptions).onfinish = () => {
+                            visibleElement.classList.add(mobileView ? 'hide-on-mobile' : 'hidden')
+                            parent.children[index].classList.remove(mobileView ? 'hide-on-mobile' : 'hidden')
+                            if (entry)
+                                parent.children[index].animate(entry, animOptions).onfinish = () => resolve()
+                        }
+                    } else {
+                        visibleElement.classList.add(mobileView ? 'hide-on-mobile' : 'hidden')
+                        parent.children[index].classList.remove(mobileView ? 'hide-on-mobile' : 'hidden')
+                        resolve()
+                    }
+                } else {
+                    parent.children[index].classList.remove(mobileView ? 'hide-on-mobile' : 'hidden')
+                    parent.children[index].animate(entry, animOptions).onfinish = () => resolve()
+                }
+            })
+        }
     </script>
     <script>
         //UI for webWallet
         const render = {
             savedIdCard(floID, name) {
                 const clone = getRef('saved_id_template').content.cloneNode(true).firstElementChild;
-                clone.dataset.floId = floID;
+                clone.dataset.floAddress = floID;
                 clone.dataset.name = name;
                 clone.querySelector('.saved-id__initial').textContent = name[0];
                 clone.querySelector('.saved-id__label').textContent = name;
@@ -1261,7 +1909,7 @@
             savedIdPickerCard(floID, name) {
                 return createElement('li', {
                     className: 'saved-id grid interact',
-                    attributes: { 'tabindex': '0', 'data-flo-id': floID },
+                    attributes: { 'tabindex': '0', 'data-flo-address': floID },
                     innerHTML: `
                                     <div class="saved-id__initial">${name[0]}</div>
                                     <div class="grid gap-0-5">
@@ -1273,96 +1921,248 @@
             },
             transactionCard(details) {
                 const { sender, receiver, floData, time, txid } = details
+                const queriedFloId = pagesData.wildcards[0]
                 const clone = getRef('transaction_template').content.cloneNode(true).firstElementChild;
                 if (sender === receiver) {
                     clone.querySelector('.transaction__icon').innerHTML = `<svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><title>sender and receiver is same</title><path d="M.01 0h24v24h-24V0z" fill="none"/><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>`;
-                } else if (pagesData.params.id === sender) {
+                } else if (queriedFloId === sender) {
                     clone.querySelector('.transaction__icon').innerHTML = `<svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0z" fill="none"/><path d="M9 5v2h6.59L4 18.59 5.41 20 17 8.41V15h2V5z"/></svg>`;
                 } else {
                     clone.querySelector('.transaction__icon').innerHTML = `<svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0z" fill="none"/><path d="M20 5.41L18.59 4 7 15.59V9H5v10h10v-2H8.41z"/></svg>`;
                 }
-                clone.querySelector('.transaction__receiver').textContent = pagesData.params.id === sender ? receiver : sender
+                clone.querySelector('.transaction__receiver').textContent = queriedFloId === sender ? receiver : sender
                 clone.querySelector('.transaction__flo-data').textContent = floData
-                clone.querySelector('.transaction__link').href = `https://flosight.duckdns.org/tx/${txid}`
+                clone.querySelector('.transaction__link').href = `${floBlockchainAPI.current_server}tx/${txid}`
                 clone.querySelector('.transaction__time').textContent = getFormattedTime(time * 1000)
                 return clone
             },
-            async transactions(floID) {
+            async transactions(queriedFloId = pagesData.wildcards[0]) {
                 try {
                     scrollToTopObserver.disconnect()
                     // retrieve tokens and render them
-                    getRef('tokens').classList.add('hide')
-                    fetch(`https://ranchimallflo.duckdns.org/api/v1.0/getFloAddressBalance?floAddress=${floID}`).then(res => res.json()).then(({ floAddressBalances }) => {
-                        const frag = document.createDocumentFragment()
-                        getRef('token_list').innerHTML = ''
-                        let hasTokens = false
+                    getRef('tokens').classList.add('hidden')
+                    fetchJSON(`${floGlobals.tokenApiUrl}/api/v2/floAddressBalance/${queriedFloId}`).then(({ floAddressBalances }) => {
+                        let ownedTokens = []
                         for (const token in floAddressBalances) {
-                            hasTokens = true
-                            frag.append(createElement('li', {
-                                className: 'token-item',
-                                innerHTML: `<span>${token}: </span><span>${floAddressBalances[token].balance}</span>`
-                            }))
+                            ownedTokens.push(html`
+                                <li class="token-item">
+                                    <span>${token}: </span><span>${parseFloat((floAddressBalances[token].balance || 0).toFixed(8))}</span>
+                                </li>
+                            `)
                         }
-                        if (hasTokens) {
-                            getRef('token_list').append(frag)
-                            getRef('tokens').classList.remove('hide')
+                        if (ownedTokens.length) {
+                            renderElem(getRef('token_list'), html`${ownedTokens}`)
+                            getRef('tokens').classList.remove('hidden')
                         }
                     }).catch(e => {
                         console.error(e)
                     })
                     // retrieve FLO balance
                     getRef('flo_balance').innerHTML = `<sm-spinner></sm-spinner>`;
-                    floWebWallet.getBalance(floID).then((retrievedBal) => {
+                    floWebWallet.getBalance(queriedFloId).then((retrievedBal) => {
                         getRef('flo_balance').textContent = `${parseFloat(retrievedBal.toFixed(3))} FLO`;
                     }).catch((error) => {
                         notify(error, 'error');
                     })
                     floWebWallet.getLabels().then(allLabels => {
-                        getRef('flo_id_name').textContent = allLabels.hasOwnProperty(floID) ? allLabels[floID] === 'Unknown' ? floID : allLabels[floID] : floID
+                        if (allLabels[queriedFloId]) {
+                            renderElem(getRef('queried_flo_address'), html`<h4>${allLabels[queriedFloId]}</h4> <sm-copy clip-text value=${queriedFloId}></sm-copy>`)
+                        } else {
+                            renderElem(getRef('queried_flo_address'), html`<h4><sm-copy clip-text value=${queriedFloId}></sm-copy></h4>`)
+                        }
                     })
-                    // render transactions
-                    getRef('transactions_scroller').nextElementSibling.classList.remove('hide')
-                    getRef('transactions_scroller').classList.add('hide')
+                    // show spinner
+                    getRef('transactions_scroller').nextElementSibling.classList.remove('hidden')
+                    getRef('transactions_scroller').classList.add('hidden')
                     getRef('transactions_list').innerHTML = '';
-                    await floWebWallet.syncTransactions(floID);
-                    let allTransactions = (await floWebWallet.readTransactions(floID)).reverse();
+                    await floWebWallet.syncTransactions(queriedFloId);
+                    let allTransactions = (await floWebWallet.readTransactions(queriedFloId)).reverse();
                     const filter = getRef('filter_selector').value;
                     if (filter !== 'all') {
-                        allTransactions = allTransactions.filter(t => filter === 'sent' ? t.sender === floID : t.receiver === floID)
+                        allTransactions = allTransactions.filter(t => filter === 'sent' ? t.sender === queriedFloId : t.receiver === queriedFloId)
                     }
+                    // render transactions
                     if (transactionsLazyLoader) {
                         transactionsLazyLoader.update(allTransactions)
                     } else {
                         transactionsLazyLoader = new LazyLoader('#transactions_list', allTransactions, render.transactionCard)
                         transactionsLazyLoader.init()
                     }
-                    getRef('transactions_scroller').classList.remove('hide')
-                    getRef('transactions_scroller').nextElementSibling.classList.add('hide')
+                    getRef('transactions_scroller').classList.remove('hidden')
+                    getRef('transactions_scroller').nextElementSibling.classList.add('hidden')
                     getRef('transactions_scroller').scroll({
                         top: 0
                     })
                 } catch (err) {
                     notify(err, 'error');
                 }
+            },
+            availableAssetOptions() {
+                return (floGlobals.tokens || []).map(token => html` <sm-option value=${token}>${token}</sm-option> `)
+            },
+            availableSmartContractOptions(smartContracts = [], selected) {
+                return smartContracts
+                    .map(({ contractName, contractAddress }) => html`
+                        <sm-option class="breakable" value=${`${contractName}_${contractAddress}`} ?selected=${`${contractName}_${contractAddress}` === `${selected}`}>${`${replaceDash(contractName)} (${contractAddress})`}</sm-option> 
+                    `)
+            },
+            contractCreationForm(type, subtype) {
+                return html`
+                    ${!type && !subtype ? html`
+                        <div class="grid gap-1-5">
+                            <fieldset class="grid gap-0-5">
+                                <legend>Type</legend>
+                                <label>
+                                    <input type="radio" name="contract-type" value="one-time-event" ?checked=${type === 'one-time-event'} ?disabled=${type !== 'one-time-event'}>
+                                    <span>One time event</span>
+                                </label>
+                                <label>
+                                    <input type="radio" name="contract-type" value="continuous-event" ?checked=${type === 'continuous-event'} ?disabled=${type !== 'continuous-event'}>
+                                    <span>Continuous event</span>
+                                </label>
+                            </fieldset>
+                            <fieldset class="grid gap-0-5">
+                                <legend>Subtype</legend>
+                                <label>
+                                    <input type="radio" name="contract-subtype" value="time-trigger" ?checked=${subtype === 'time-trigger'} ?disabled=${subtype !== 'time-trigger'}>
+                                    <span>Time trigger</span>
+                                </label>
+                                <label>
+                                    <input type="radio" name="contract-subtype" value="external-trigger" ?checked=${subtype === 'external-trigger'} ?disabled=${subtype !== 'external-trigger'}>
+                                    <span>External trigger</span>
+                                </label>
+                                <label>
+                                    <input type="radio" name="contract-subtype" value="tokenswap" ?checked=${subtype === 'tokenswap'} ?disabled=${subtype !== 'tokenswap'}>
+                                    <span>Token Swap</span>
+                                </label>
+                            </fieldset>
+                        </div>
+                    ` : ''}
+                    <div class="grid gap-1-5">
+                        <div class="grid gap-0-5">
+                            <span class="label">Contract name</span>
+                            <sm-input id="contract_name" pattern="^[a-zA-Z0-9 ]+$" error-text="Only alphabet and numbers are allowed" required> </sm-input>
+                        </div>
+                        ${type === 'one-time-event' ? html`
+                            <div class="grid gap-0-5">
+                                <span class="label">Asset</span>
+                                <sm-select id="contract_asset">
+                                    ${render.availableAssetOptions()}
+                                </sm-select>
+                            </div>
+                            ${subtype === 'time-trigger' ? html`
+                                <div class="grid gap-0-5">
+                                    <span class="label">Payee FLO addresses</span>
+                                    <ul id="payee_container" class="grid gap-1">
+                                        <li class="payee-address-wrapper">
+                                            <sm-input class="flex w-100 payee-address" placeholder="FLO address" error-text="Invalid FLO address" animate data-flo-address required> </sm-input>
+                                            <sm-input class="payee-share" placeholder="Share (%)" value="100" type="number" min="0" max="100" step="0.01" error-text="Share should be between 0-100" animate required> </sm-input>
+                                        </li>
+                                    </ul>
+                                    <button onclick=${addPayeeAddress} class="margin-right-auto gap-0-5">
+                                        <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0z" fill="none"/><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>    
+                                        Add Address
+                                    </button>
+                                </div>
+                            ` : html`
+                                <div class="grid gap-0-5">
+                                    <span class="label">Participant choices</span>
+                                    <div id="choices_container" class="grid gap-0-3">
+                                        <sm-input class="user-choice" pattern="^[a-zA-Z0-9 ]+$" placeholder="Choice 1" error-text="Only alphabet and numbers are allowed" required> </sm-input>    
+                                        <sm-input class="user-choice" pattern="^[a-zA-Z0-9 ]+$" placeholder="Choice 2" error-text="Only alphabet and numbers are allowed" required> </sm-input>    
+                                    </div>
+                                    <button onclick=${addChoice} class="margin-right-auto gap-0-5">
+                                        <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0z" fill="none"/><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>    
+                                        Add choice
+                                    </button>
+                                </div>
+                            `}
+                            <div class="grid gap-0-5">
+                                <span class="label">Expiration</span>
+                                <input id="contract_expiration" type="datetime-local" min=${new Date(new Date().getTime() + (5 * 60 * 1000)).toISOString().slice(0, -8)} required>
+                            </div>
+                            <div class="grid gap-0-5">
+                                <span class="label">Participation amount (optional)</span>
+                                <sm-input id="contract_participation_amount" type="number" step="0.00000001" min="0.00000001"> </sm-input>
+                            </div>
+                            <div class="grid gap-0-5">
+                                <span class="label">Min. subscription amount (optional)</span>
+                                <sm-input id="contract_min_sub_amount" type="number" step="0.00000001" min="0.00000001"> </sm-input>
+                            </div>
+                            <div class="grid gap-0-5">
+                                <span class="label">Max. subscription amount (optional)</span>
+                                <sm-input id="contract_max_sub_amount" type="number" step="0.00000001" min="0.00000001"> </sm-input>
+                            </div>
+                        ` : html`
+                            <fieldset class="grid gap-0-5" onchange=${handlePriceTypeChange}>
+                                <legend>Price type</legend>
+                                <label class="flex align-center">
+                                    <input type="radio" name="price-type" value="predetermined" checked>
+                                    <span>Static</span>
+                                </label>
+                                <label class="flex align-center">
+                                    <input type="radio" name="price-type" value="dynamic">
+                                    <span>Dynamic</span>
+                                </label>
+                            </fieldset>
+                            <div class="grid gap-0-5">
+                                <span class="label">Input token</span>
+                                <sm-select id="contract_input_token">
+                                    ${render.availableAssetOptions()}
+                                </sm-select>
+                            </div>
+                            <div class="grid gap-0-5">
+                                <span class="label">Price</span>
+                                <sm-input id="contract_initial_price" type="number" required> </sm-input>
+                            </div>
+                            <div class="grid gap-0-5">
+                                <span class="label">Output token</span>
+                                <sm-select id="contract_output_token">
+                                    ${render.availableAssetOptions()}
+                                </sm-select>
+                            </div>
+                        `}  
+                        <div class="grid gap-0-5">
+                            <span class="label">FLO private key</span>
+                            <sm-input id="contract_creator_private_key" class="password-field"
+                                type="password" error-text="Invalid private key" data-private-key required>
+                                <label slot="right" class="interact">
+                                    <input type="checkbox" class="hidden" readonly
+                                        onchange="togglePrivateKeyVisibility(this)">
+                                    <svg class="icon invisible" xmlns="http://www.w3.org/2000/svg" height="24px"
+                                        viewBox="0 0 24 24" width="24px" fill="#000000">
+                                        <title>Hide password</title>
+                                        <path d="M0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0z" fill="none" />
+                                        <path
+                                            d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z" />
+                                    </svg>
+                                    <svg class="icon visible" xmlns="http://www.w3.org/2000/svg" height="24px"
+                                        viewBox="0 0 24 24" width="24px" fill="#000000">
+                                        <title>Show password</title>
+                                        <path d="M0 0h24v24H0z" fill="none" />
+                                        <path
+                                            d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+                                    </svg>
+                                </label>
+                            </sm-input>
+                        </div>
+                        <div class="multi-state-button">
+                            <button id="create_contract_button" class="button button--primary" onclick=${createSmartContract} type="submit" disabled>Create</button>
+                        </div>        
+                    </div>
+                `
             }
         }
         let transactionsLazyLoader
-        delegate(document, 'focusin', '.textarea', e => {
-            e.target.parentNode.classList.add('label-active');
-        });
-        delegate(document, 'focusout', '.textarea', e => {
-            if (e.target.value == '')
-                e.target.parentNode.classList.remove('label-active');
-        });
         delegate(getRef('saved_ids_list'), 'click', '.saved-id', e => {
             if (e.target.closest('.edit-saved')) {
                 const target = e.target.closest('.saved-id');
-                getRef('edit_saved_id').setAttribute('value', target.dataset.floId)
-                getRef('newAddrLabel').value = target.dataset.name
+                getRef('edit_saved_id').setAttribute('value', target.dataset.floAddress)
+                getRef('new_addr_label').value = target.dataset.name
                 openPopup('edit_saved_popup')
             } else if (e.target.closest('.copy-saved-id')) {
                 const target = e.target.closest('.saved-id');
-                navigator.clipboard.writeText(target.dataset.floId)
+                navigator.clipboard.writeText(target.dataset.floAddress)
                 target.dispatchEvent(
                     new CustomEvent('copy', {
                         bubbles: true,
@@ -1371,25 +2171,22 @@
                 );
             } else {
                 const target = e.target.closest('.saved-id');
-                window.location.hash = `#/transactions?id=${target.dataset.floId}`
+                window.location.hash = `#/transactions/${target.dataset.floAddress}`
             }
         })
         delegate(getRef('saved_ids_picker_list'), 'click', '.saved-id', e => {
             const target = e.target.closest('.saved-id');
-            getRef(`${openSavedIdPopupFor === 'sender' ? 'getBal_addr' : 'receiver'}`).value = target.dataset.floId
-            getRef(`${openSavedIdPopupFor === 'sender' ? 'getBal_addr' : 'receiver'}`).focusIn()
-            if (openSavedIdPopupFor === 'sender') {
-                checkSenderBalance()
-                getRef('refresh_balance_button').classList.remove('hide')
-            }
+            getRef('receiver').value = target.dataset.floAddress
+            getRef('receiver').focusIn()
             closePopup()
         })
 
         getRef('filter_selector').addEventListener('change', async e => {
+            const queriedFloId = pagesData.wildcards[0]
             const filter = e.target.value
-            let allTransactions = (await floWebWallet.readTransactions(pagesData.params.id)).reverse()
+            let allTransactions = (await floWebWallet.readTransactions(queriedFloId)).reverse()
             if (filter !== 'all') {
-                allTransactions = allTransactions.filter(t => filter === 'sent' ? t.sender === pagesData.params.id : t.receiver === pagesData.params.id)
+                allTransactions = allTransactions.filter(t => filter === 'sent' ? t.sender === queriedFloId : t.receiver === queriedFloId)
             }
             transactionsLazyLoader.update(allTransactions)
         })
@@ -1407,10 +2204,10 @@
                         duration: 150,
                         easing: 'ease',
                     }).onfinish = () => {
-                        getRef('scroll_to_top').classList.add('hide')
+                        getRef('scroll_to_top').classList.add('hidden')
                     }
                 } else {
-                    getRef('scroll_to_top').classList.remove('hide')
+                    getRef('scroll_to_top').classList.remove('hidden')
                     getRef('scroll_to_top').animate([
                         {
                             transform: 'scale(0)',
@@ -1445,12 +2242,6 @@
             getRef('created_flo_id').append(card);
             openPopup('create_flo_id_popup');
         });
-
-        let openSavedIdPopupFor = null;
-        function showFloIdPicker(type) {
-            openSavedIdPopupFor = type;
-            openPopup('saved_ids_popup');
-        }
 
         // Create array of objects from object of objects
         async function getArrayOfSavedIds() {
@@ -1496,7 +2287,7 @@
 
         const savedIdsObserver = new MutationObserver((mutationList) => {
             mutationList.forEach(mutation => {
-                getRef('saved_ids_tip').textContent = mutation.target.children.length === 0 ? `Click 'Add FLO ID' to add a new FLO ID.` : `Tap on saved IDs to see transactions and balance.`
+                getRef('saved_ids_tip').textContent = mutation.target.children.length === 0 ? `Click 'Add FLO address' to add a new FLO address.` : `Tap on saved IDs to see transactions and balance.`
             })
         })
 
@@ -1506,15 +2297,15 @@
 
 
         function saveFloId() {
-            const floID = getRef('floAddr').value.trim()
-            let name = getRef('addrLabel').value.trim();
+            const floID = getRef('flo_addr_to_save').value.trim()
+            let name = getRef('label_to_save').value.trim();
             if (name == '')
                 name = 'Unknown'
             compactIDB.addData('labels', name, floID).then((resolve) => {
                 insertElementAlphabetically(name, render.savedIdCard(floID, name))
                 closePopup()
             }).catch((error) => {
-                notify('FLO ID already saved', 'error');
+                notify('FLO address already saved', 'error');
             })
         }
 
@@ -1530,32 +2321,143 @@
             }
         }
 
-        getRef('getBal_addr').addEventListener('input', debounce(e => {
+        getRef('get_private_key_field').addEventListener('input', debounce(e => {
             if (e.target.isValid) {
                 checkSenderBalance()
-                getRef('refresh_balance_button').classList.remove('hide')
             } else {
-                getRef('sender_balance').textContent = `0`;
-                getRef('refresh_balance_button').classList.add('hide')
+                resetBalance()
             }
         }, 100))
 
         function checkSenderBalance() {
-            getRef('sender_balance').innerHTML = `<sm-spinner></sm-spinner>`;
-            floWebWallet.getBalance(getRef('getBal_addr').value.trim()).then((retrievedBal) => {
-                getRef('sender_balance').textContent = parseFloat(retrievedBal);
+            renderBalance(0, true)
+            const senderPrivateKey = getRef('get_private_key_field').value.trim()
+            const senderFloAddr = floCrypto.getFloID(senderPrivateKey)
+            Promise.all([
+                floWebWallet.getBalance(senderFloAddr),
+                fetchJSON(`${floGlobals.tokenApiUrl}/api/v2/floAddressBalance/${senderFloAddr}`)
+            ]).then(([retrievedBal, { floAddressBalances }]) => {
+                renderBalance(parseFloat(retrievedBal))
+                let ownedTokens = []
+                for (const token in floAddressBalances) {
+                    ownedTokens.push(html`
+                        <label class="token-balance">
+                            <input type="radio" name="sender-token" data-balance=${(floAddressBalances[token].balance || 0).toFixed(8)} value=${token}/>
+                            <span>${token} </span><b class="margin-left-auto">${parseFloat((floAddressBalances[token].balance || 0).toFixed(8))}</b>
+                        </label>
+                    `)
+                }
+                if (ownedTokens.length) {
+                    ownedTokens.push(html`
+                        <label class="token-balance">
+                            <input type="radio" name="sender-token" value="none" checked/>
+                            <span>Don't send a token</span>
+                        </label>
+                    `)
+                    renderElem(document.getElementById('sender_tokens_wrapper'), html.for(document.getElementById('sender_tokens_wrapper'), senderFloAddr)`
+                        <h5>Tokens</h5>
+                        <p>Select a token, if you want to send a token.</p>
+                        <form onsubmit="event.preventDefault()" onchange=${handleTokenSelection} class="grid gap-1">
+                            <div class="grid gap-0-5">
+                                ${ownedTokens}
+                            </div>
+                        </form>
+                    `)
+                    document.getElementById('sender_tokens_wrapper').classList.remove('hidden')
+                    handleTokenSelection()
+                } else {
+                    document.getElementById('sender_tokens_wrapper').classList.add('hidden')
+                    clearSelection()
+                }
             }).catch((error) => {
-                console.error(error);
+                notify(error, 'error');
+                resetBalance()
             })
+        }
+        function clearSelection() {
+            getRef('tx_token_amount').disabled = true
+            getRef('tx_token_amount').classList.add('hidden')
+            getRef('tx_token_amount').value = ''
+            getRef('flo_data_wrapper').classList.remove('hidden')
+            getRef('flo_data_textarea').value = ''
+            getRef('tx_flo_amount').value = ''
+        }
+        function handleTokenSelection() {
+            const selectedToken = document.getElementById('sender_tokens_wrapper').querySelector('input[type="radio"]:checked')
+            if (selectedToken.value === 'none')
+                return clearSelection(e)
+            const tokenName = selectedToken.value
+            const tokenBalance = parseFloat(selectedToken.dataset.balance)
+            getRef('flo_data_wrapper').classList.add('hidden')
+            getRef('tx_token_amount').disabled = false
+            getRef('tx_token_amount').classList.remove('hidden')
+            getRef('tx_token_amount').placeholder = `${tokenName.charAt(0).toUpperCase() + tokenName.slice(1)} amount`
+            getRef('tx_token_amount').setAttribute('max', tokenBalance)
+            getRef('tx_flo_amount').value = '0.001'
+        }
+        getRef('tx_token_amount').addEventListener('input', e => {
+            const tokenAmount = parseFloat(e.target.value.trim())
+            const selectedToken = document.getElementById('sender_tokens_wrapper').querySelector('input[type="radio"]:checked')
+            const tokenName = selectedToken.value
+            const tokenBalance = parseFloat(selectedToken.dataset.balance)
+            const { rangeOverflow, rangeUnderflow } = e.target.validity;
+            if (rangeUnderflow)
+                e.target.setAttribute('error-text', `Minimum 0.00000001 ${tokenName} allowed`)
+            if (rangeOverflow)
+                e.target.setAttribute('error-text', `You can send ${tokenName} upto ${tokenBalance} only`)
+            getRef('flo_data_textarea').value = `send ${tokenAmount} ${tokenName}#`
+        })
+        getRef('tx_flo_amount').addEventListener('input', e => {
+            const floAmount = parseFloat(e.target.value.trim())
+            const { rangeOverflow, rangeUnderflow } = e.target.validity;
+            if (rangeUnderflow)
+                e.target.setAttribute('error-text', `Minimum 0.00000001 FLO allowed`)
+            if (rangeOverflow)
+                e.target.setAttribute('error-text', `You can send FLO upto ${getRef('sender_balance').textContent} only`)
+        })
+
+        function renderBalance(balance = 0, loading = false) {
+            getRef('tx_flo_amount').setAttribute('max', balance)
+            renderElem(getRef('balance_card'), html`
+                <div class="grid">
+                    <div class="flex align-center space-between">
+                        <h5>Balance</h5>
+                        <button id="refresh_balance_button" class="button button--small button--colored hidden"
+                            onclick="checkSenderBalance()">Refresh</button>
+                    </div>
+                    <div class="flex align-end gap-0-3">
+                        <b id="sender_balance" style="font-size: 2.5rem;line-height: 1;">${loading ? html`<sm-spinner></sm-spinner>` : balance}</b>
+                        <span>FLO</span>
+                    </div>
+                    ${!loading && balance == 0 ? html`
+                        <p style="margin-top: 1.5rem; color: var(--danger-color)">
+                            You don't have any FLO in your wallet. Please add some FLO to your wallet to send FLO.
+                        </p>
+                    ` : ''}
+                </div>
+                <div id="sender_tokens_wrapper" class="grid hidden"></div>
+            `)
+        }
+
+        function resetBalance() {
+            clearSelection()
+            renderElem(getRef('balance_card'), html`
+                <div class="flex align-center space-between">
+                    <h5>Balance</h5>
+                </div>
+                <p style="line-height: 1.2; opacity: 0.7;">
+                    Sender balance will be shown once you enter a valid address
+                </p>
+            `)
         }
 
 
         function saveChanges() {
-            let name = getRef('newAddrLabel').value.trim();
+            let name = getRef('new_addr_label').value.trim();
             if (name == '')
                 name = 'Unknown';
             compactIDB.writeData('labels', name, getRef('edit_saved_id').value).then((resolve) => {
-                const potentialTarget = getRef('saved_ids_list').querySelector(`.saved-id[data-flo-id="${getRef('edit_saved_id').value}"]`)
+                const potentialTarget = getRef('saved_ids_list').querySelector(`.saved-id[data-flo-address="${getRef('edit_saved_id').value}"]`)
                 if (potentialTarget) {
                     potentialTarget.dataset.name = name;
                     potentialTarget.querySelector('.saved-id__label').textContent = name;
@@ -1572,11 +2474,11 @@
         }
 
         function deleteSaved() {
-            getConfirmation('Do you want delete this FLO ID?', {
+            getConfirmation('Do you want delete this FLO address?', {
                 confirmText: 'Delete',
             }).then(res => {
                 if (res) {
-                    const toDelete = getRef('saved_ids_list').querySelector(`.saved-id[data-flo-id="${getRef('edit_saved_id').value}"]`)
+                    const toDelete = getRef('saved_ids_list').querySelector(`.saved-id[data-flo-address="${getRef('edit_saved_id').value}"]`)
                     if (toDelete)
                         toDelete.remove();
                     compactIDB.removeData('labels', getRef('edit_saved_id').value);
@@ -1594,42 +2496,98 @@
         function retrieveFloId() {
             const privKey = getRef('retrieve_flo_id_field').value.trim()
             floWebWallet.recoverAddr(privKey).then(({ floID }) => {
-                getRef('recovered_flo_id_wrapper').classList.remove('hide')
+                getRef('recovered_flo_id_wrapper').classList.remove('hidden')
                 getRef('recovered_flo_id').value = floID
             })
         }
 
-        function sendMessage() {
-            const sender = getRef('getBal_addr').value.trim();
-            const amount = parseFloat(getRef('amount').value.trim());
-            const receiver = getRef('receiver').value.trim();
-            const floData = getRef('flo_data_textarea').value.trim();
-            const privKey = getRef('get_private_key_field').value.trim();
-            getRef('confirm_transaction_button').disabled = true;
-            getRef('confirm_transaction_button').classList.add('hide')
-            getRef('confirm_transaction_button').nextElementSibling.classList.remove('hide')
-            floWebWallet.sendTransaction(sender, receiver, amount, floData, privKey).then((transactionId) => {
-                showTransactionResult('success', transactionId);
-                getRef('send_form').reset();
-            }).catch((error) => {
-                showTransactionResult('failed', error);
+        function checkBalance() {
+            getRef('balance_wrapper').classList.add('hidden')
+            const floID = getRef('check_balance_field').value.trim()
+            buttonLoader(getRef('check_balance_button'), true)
+            Promise.all([
+                floWebWallet.getBalance(floID),
+                fetchJSON(`${floGlobals.tokenApiUrl}/api/v2/floAddressBalance/${floID}`)
+            ]).then(([retrievedBal, { floAddressBalances }]) => {
+                console.log(floAddressBalances)
+                renderElem(getRef('balance_wrapper'), html`
+                    <h4>Balance</h4>
+                    <div class="flex gap-0-5 align-center space-between">
+                        <span>FLO:</span>
+                        <strong style="font-size: 1.1rem">${retrievedBal}</strong>
+                    </div>
+                    ${floAddressBalances ? Object.keys(floAddressBalances).map(token => html`
+                        <div class="flex gap-0-5 align-center space-between">
+                            <span>${token}:</span>
+                            <strong style="font-size: 1.1rem">${parseFloat((floAddressBalances[token].balance || 0).toFixed(8))}</strong>
+                        </div>
+                    `) : ''}
+                `)
+                getRef('balance_wrapper').classList.remove('hidden')
+            }).catch(err => {
+                notify(err, 'error')
+            }).finally(() => {
+                buttonLoader(getRef('check_balance_button'), false)
             })
         }
 
-        function showTransactionResult(status, result) {
-            getRef('transaction_result').className = status;
-            if (status === 'success') {
-                getRef('transaction_link').href = `https://flosight.duckdns.org/tx/${result}`
-                getRef('transaction_link').parentNode.classList.remove('hide')
-                getRef('transaction_result__title').textContent = 'Transaction request sent'
-                getRef('transaction_result__description').textContent = 'This might take upto 30 mins to complete and reflect on blockchain.'
-            } else {
-                getRef('transaction_result__title').textContent = 'Transaction failed'
-                getRef('transaction_result__description').textContent = result
-                getRef('transaction_link').parentNode.classList.add('hide')
-            }
-            getRef('get_private_key').classList.add('hide')
-            getRef('transaction_result').classList.remove('hide')
+        function initTransaction() {
+            const privKey = getRef('get_private_key_field').value.trim();
+            const sender = floCrypto.getFloID(privKey)
+            const floAmount = parseFloat(getRef('tx_flo_amount').value.trim());
+            const receiver = getRef('receiver').value.trim();
+            const floData = getRef('flo_data_textarea').value.trim();
+            const selectedToken = document.getElementById('sender_tokens_wrapper').querySelector('input[type="radio"]:checked')
+            const tokenAmount = parseFloat(getRef('tx_token_amount').value.trim())
+            getConfirmation(`Confirm transaction`, {
+                message: `
+                    Sending ${floAmount} FLO ${selectedToken && selectedToken.value !== 'none' ? ` and ${tokenAmount} ${selectedToken.value}` : ''} to ${receiver} 
+                `,
+                confirmText: 'Send',
+            }).then(res => {
+                if (res) {
+                    buttonLoader('send_button', true)
+                    floWebWallet.sendTransaction(sender, receiver, floAmount, floData, privKey).then((transactionId) => {
+                        showTransactionResult(true, transactionId);
+                        getRef('send_form').reset();
+                        getRef('send_button').disabled = true;
+                        resetBalance()
+                    }).catch((error) => {
+                        showTransactionResult(false, error);
+                    }).finally(() => {
+                        buttonLoader('send_button', false)
+                    })
+                }
+            })
+        }
+
+        function showTransactionResult(success, result, options = {}) {
+            let { title, description } = options
+            if (!title)
+                title = success ? 'Transaction request sent' : 'Transaction failed'
+            if (!description)
+                description = success ? 'This might take upto 30 mins to complete and reflect on blockchain.' : result
+
+            renderElem(getRef('transaction_result'), html`
+                ${success ? html`
+                    <svg class="icon icon--success" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"> <path d="M0 0h24v24H0z" fill="none" /> <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z" /> </svg>
+                ` : ''}
+                ${!success ? html`
+                    <svg class="icon icon--failed" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"> <path d="M0 0h24v24H0z" fill="none" /> <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" /> </svg>
+                ` : ''}
+                <h3 id="transaction_result__title">${title}</h3>
+                <p id="transaction_result__description"> ${description} </p>
+                ${success ? html`
+                    <div class="grid gap-1">
+                        <a id="transaction_link" href=${`${floBlockchainAPI.current_server}tx/${result}`} style="margin-top: 1.5rem;" target="_blank">See transaction on blockchain</a>
+                        <div class="grid">
+                            <span class="label">Transaction ID</span>
+                            <sm-copy class="justify-self-center" value=${result}></sm-copy>
+                        </div>
+                    </div>
+                ` : ''}
+            `)
+            openPopup('transaction_result_popup')
         }
 
 
@@ -1660,12 +2618,12 @@
 
         getRef('flo_data_textarea').addEventListener('input', function (e) {
             if (this.value.trim() !== '') {
-                getRef('sendBtn').classList.add('hide')
-                getRef('fix_invalid_button').classList.remove('hide')
+                getRef('send_button').classList.add('hidden')
+                getRef('fix_invalid_button').classList.remove('hidden')
             }
             else {
-                getRef('sendBtn').classList.remove('hide')
-                getRef('fix_invalid_button').classList.add('hide')
+                getRef('send_button').classList.remove('hidden')
+                getRef('fix_invalid_button').classList.add('hidden')
             }
             if (1040 - this.value.length) {
                 getRef('show_character_count').textContent = `${1040 - this.value.length} /1040`
@@ -1677,8 +2635,8 @@
         function checkFloData() {
             const floDataText = getRef('flo_data_textarea').value;
             if (/^[\x20-\x7E]*$/.test(floDataText)) {
-                getRef('sendBtn').classList.remove('hide')
-                getRef('fix_invalid_button').classList.add('hide')
+                getRef('send_button').classList.remove('hidden')
+                getRef('fix_invalid_button').classList.add('hidden')
                 getRef('flo_data_status').textContent = ''
             }
             else {
@@ -1690,17 +2648,6 @@
             getRef('flo_data_textarea').value = floDataText.replace(/\s/g, " ").replace(/[^\x20-\x7E]/g, '');
             checkFloData()
         }
-
-        // let preventUnconfirmedUTXO = true
-        // getRef('allow_utxo_switch').addEventListener('change', e => {
-        //     preventUnconfirmedUTXO = !e.target.checked
-        //     localStorage.preventUnconfirmedUTXO = preventUnconfirmedUTXO
-        // })
-        // if (localStorage.getItem('preventUnconfirmedUTXO') !== 'null') {
-        //     const getBoolean = (localStorage.preventUnconfirmedUTXO === 'false')
-        //     preventUnconfirmedUTXO = getBoolean
-        //     getRef('allow_utxo_switch').checked = getBoolean
-        // }
 
         const selectedColors = [
             '--dark-red',
@@ -1719,6 +2666,464 @@
             '--tangerine',
             '--redish-orange',
         ]
+
+        async function getContractInfo(name, address) {
+            return new Promise((resolve, reject) => {
+                if (!name) {
+                    name = floGlobals.smartContracts[0].contractName
+                    address = floGlobals.smartContracts[0].contractAddress
+                }
+                fetchJSON(`${floGlobals.tokenApiUrl}/api/v2/smartContractInfo?contractName=${name}&contractAddress=${address}`)
+                    .then(info => {
+                        console.log(info)
+                        const {
+                            contractInfo: {
+                                contractType,
+                                numberOfDeposits,
+                                numberOfParticipants,
+                                priceType,
+                                oracle_address,
+                                contractSubtype,
+                                status,
+                                expiryTime,
+                                payeeAddress,
+                                userChoices,
+                                tokenIdentification,
+                                acceptingToken,
+                                sellingToken,
+                                contractAmount,
+                                minimumsubscriptionamount,
+                                maximumsubscriptionamount,
+                                totalHonorAmount,
+                                totalParticipationAmount,
+                                price
+                            }, contractAddress,
+                            contractName
+                        } = info
+                        resolve({
+                            contractName,
+                            contractAddress,
+                            contractType,
+                            contractSubtype,
+                            status,
+                            expiryTime,
+                            payeeAddress,
+                            userChoices,
+                            token: tokenIdentification,
+                            acceptingToken,
+                            sellingToken,
+                            participationFees: contractAmount,
+                            minimumsubscriptionamount,
+                            maximumsubscriptionamount,
+                            numberOfDeposits,
+                            numberOfParticipants,
+                            priceType,
+                            oracle_address,
+                            totalHonorAmount,
+                            totalParticipationAmount,
+                            price
+                        })
+                    }).catch(error => {
+                        reject(error)
+                    })
+            })
+        }
+
+        function getScDetails(name, address) {
+            return floGlobals.smartContracts[floGlobals.scMap.get(`${name}_${address}`)] || {}
+        }
+
+        function filterSmartContracts(options) {
+            const { type, subType, dynamic = false } = options || {}
+            let filteredSmartContracts = (floGlobals.smartContracts || []);
+            if (type) {
+                filteredSmartContracts = filteredSmartContracts.filter(sc => sc.contractType === type)
+                if (type === 'continuos-event' && dynamic)
+                    filteredSmartContracts = filteredSmartContracts.filter(sc => sc.oracle_address)
+            }
+            if (subType)
+                filteredSmartContracts = filteredSmartContracts.filter(sc => sc.contractSubType === subType)
+            return filteredSmartContracts
+        }
+
+        function handleSmartContractSelection(actionType) {
+            const selectedSmartContract = document.getElementById('selected_smart_contract').value
+            const [contractName, contractAddress] = selectedSmartContract.split('_')
+            window.location.hash = `#/smartcontracts/${actionType}?scName=${contractName}&scAddress=${contractAddress}`
+        }
+        function deposit() {
+            const selectedSmartContract = document.getElementById('selected_smart_contract').value
+            const [contractName, contractAddress] = (selectedSmartContract).split('_')
+            const { contractType, contractSubType, acceptingToken, sellingToken, tokenIdentification } = getScDetails(contractName, contractAddress)
+            const depositAmount = parseFloat(document.getElementById('deposit_amount').value.trim())
+            const depositExpiration = document.getElementById('deposit_expiration').value
+            const depositorPrivateKey = document.getElementById('depositor_private_key').value.trim()
+            const depositorAddress = floCrypto.getFloID(depositorPrivateKey)
+            const floData = `Deposit ${depositAmount} ${sellingToken}# to ${contractName}@ its FLO address being ${contractAddress}$ with deposit-conditions: (1) expiryTime= ${new Date(depositExpiration).toString()}`
+            console.log(floData)
+            buttonLoader('deposit_button', true)
+            floTokenAPI.getBalance(depositorAddress, sellingToken).then(balance => {
+                if (balance < depositAmount) {
+                    buttonLoader('deposit_button', false)
+                    return notify(`Insufficient balance. You have ${balance} ${sellingToken}`, 'error')
+                }
+                getConfirmation('Deposit', {
+                    message: `Are you sure you want to deposit ${depositAmount} ${sellingToken} in ${contractName}?`,
+                    confirmText: 'Deposit',
+                }).then(res => {
+                    if (!res) return
+                    floBlockchainAPI.sendTx(depositorAddress, contractAddress, floGlobals.sendAmt, depositorPrivateKey, floData).then(txid => {
+                        showTransactionResult(true, txid, {
+                            title: `${sellingToken} tokens deposited`,
+                            description: `If your tokens are not exchanged before the expiry time, you will get them back.`
+                        })
+                        getRef('smart_contract_deposit_form').reset()
+                        document.getElementById('deposit_button').disabled = true
+                    }).catch(error => {
+                        showTransactionResult(false, error)
+                        console.error(error)
+
+                    }).finally(() => {
+                        buttonLoader('deposit_button', false)
+                    })
+                })
+            }).catch(error => {
+                notify(`Error getting balance.`, 'error')
+                buttonLoader('deposit_button', false)
+                console.error(error)
+            })
+        }
+
+        function participate(e) {
+            const selectedSmartContract = document.getElementById('selected_smart_contract').value
+            const [contractName, contractAddress] = (selectedSmartContract).split('_')
+            const participationAmount = parseFloat(document.getElementById('participation_amount').value.trim())
+            const { contractType, contractSubType, acceptingToken, tokenIdentification } = getScDetails(contractName, contractAddress)
+            const participantPrivateKey = document.getElementById('participant_private_key').value.trim()
+            const participantAddress = floCrypto.getFloID(participantPrivateKey)
+            let floData
+            let title = 'Participation successful'
+            switch (contractType) {
+                case 'one-time-event': {
+                    // check min,max subscription and participation amount
+                    switch (contractSubType) {
+                        case 'time-trigger':
+                            floData = `send ${participationAmount} ${tokenIdentification}# to ${contractName}@`
+                            description = html`You have participated in the event. Check out details <a href=${`https://ranchimall.github.io/floscout/#/contract/${contractName}-${contractAddress}`} target='_blank'>here</a>`
+                            break
+                        case 'external-trigger':
+                            const userChoice = getRef('smart_contract_participate_form').querySelector('input[name="choice"]:checked').value
+                            if (!userChoice)
+                                return notify('Please select a choice', 'error')
+                            floData = `send ${participationAmount} ${tokenIdentification}# to ${contractName}@ to FLO address ${contractAddress} with the userchoice: ${userChoice}`
+                            description = html`You have casted your vote. Check out details <a href=${`https://ranchimall.github.io/floscout/#/contract/${contractName}-${contractAddress}`} target='_blank'>here</a>`
+                            break
+                    }
+                }
+                    break;
+                case 'continuos-event': {
+                    switch (contractSubType) {
+                        case 'tokenswap':
+                            floData = `send ${participationAmount} ${acceptingToken}# to ${contractName}@`
+                            title = 'Token swap initiated'
+                            description = html`Check your transactions and token balance <a href=${`https://ranchimall.github.io/flowallet/#/transactions/${participantAddress}`} target='_blank'>here</a>`
+                            break;
+
+                        default:
+                            break;
+                    }
+                }
+                    break
+            }
+            console.log(floData)
+            buttonLoader('participate_button', true)
+            floTokenAPI.getBalance(participantAddress, acceptingToken).then(balance => {
+                if (balance < participationAmount) {
+                    buttonLoader('participate_button', false)
+                    return notify(`Insufficient balance. You have ${balance} ${acceptingToken || tokenIdentification}`, 'error')
+                }
+                getConfirmation('Participate', {
+                    message: `Are you sure you want to participate in ${contractName} with ${participationAmount} ${acceptingToken || tokenIdentification}?`,
+                    confirmText: 'Participate',
+                }).then(res => {
+                    if (!res) return
+                    floBlockchainAPI.sendTx(participantAddress, contractAddress, floGlobals.sendAmt, participantPrivateKey, floData).then(txid => {
+                        showTransactionResult(true, txid, {
+                            title,
+                            description
+                        })
+                        getRef('smart_contract_participate_form').reset()
+                        document.getElementById('participate_button').disabled = true
+                    }).catch(error => {
+                        showTransactionResult(false, error)
+                        console.error(error)
+                    }).finally(() => {
+                        buttonLoader('participate_button', false)
+                    })
+                })
+            }).catch(error => {
+                notify(`Error getting balance.`, 'error')
+                buttonLoader('participate_button', false)
+                console.error(error)
+            })
+        }
+
+        function updatePrice(e) {
+            const selectedSmartContract = document.getElementById('selected_smart_contract').value
+            const [contractName, contractAddress] = (selectedSmartContract).split('_')
+            const oraclePrivateKey = document.getElementById('oracle_private_key').value.trim()
+            const oracleAddress = document.getElementById('oracle_address').value
+            if (!floCrypto.verifyPrivKey(oraclePrivateKey, oracleAddress)) {
+                return notify(`Private key doesn't match with Oracle address`, 'error')
+            }
+            const updatedPrice = parseFloat(document.getElementById('updated_price').value.trim())
+            const floData = ` {"price-update":{"contract-name": "${contractName}", "contract-address": "${contractAddress}", "price": ${updatedPrice}}} `
+            console.log(floData)
+            getConfirmation('Update price', {
+                message: `Are you sure you want to update the price of ${contractName} to ${updatedPrice} FLO?`,
+                confirmText: 'Update',
+                cancelText: 'Cancel'
+            }).then((res) => {
+                if (!res) return
+                buttonLoader(e.target.closest('button'), true)
+                floBlockchainAPI.writeData(oracleAddress, floData, oraclePrivateKey, contractAddress).then((txid) => {
+                    showTransactionResult(true, txid, {
+                        title: 'Price update initiated',
+                    })
+                    getRef('smart_contract_update_form').reset()
+                    document.getElementById('update_price_button').disabled = true
+                }).catch((error) => {
+                    showTransactionResult(false, error)
+                    console.error(error)
+                }).finally(() => {
+                    buttonLoader(e.target.closest('button'), false)
+                })
+            })
+        }
+
+        function triggerContract(e) {
+            const selectedSmartContract = document.getElementById('selected_smart_contract').value
+            const [contractName, contractAddress] = (selectedSmartContract).split('_')
+            const triggerPrivateKey = document.getElementById('trigger_private_key').value.trim()
+            const triggerAddress = floCrypto.getFloID(triggerPrivateKey)
+            const triggerOutcome = getRef('smart_contract_trigger_form').querySelector('input[name="outcome"]:checked').value
+            const floData = `${contractName}@ triggerCondition:"${triggerOutcome}"`
+            console.log(floData)
+            if (contractAddress !== triggerAddress) {
+                return notify(`Private key doesn't match with contract trigger address`, 'error')
+            }
+            getConfirmation('Trigger contract', {
+                message: `Triggering ${contractName} with outcome: ${triggerOutcome}`,
+                confirmText: 'Trigger',
+                cancelText: 'Cancel'
+            }).then((res) => {
+                if (!res) return
+                buttonLoader('trigger_contract_button', true)
+                floBlockchainAPI.writeData(contractAddress, floData, triggerPrivateKey, contractAddress).then((txid) => {
+                    showTransactionResult(true, txid, {
+                        title: 'Contract trigger initiated',
+                    })
+                    getRef('smart_contract_trigger_form').reset()
+                    document.getElementById('trigger_contract_button').disabled = true
+                }).catch((error) => {
+                    showTransactionResult(false, error)
+                    console.error(error)
+                }).finally(() => {
+                    buttonLoader('trigger_contract_button', false)
+                })
+            })
+        }
+
+        function handlePriceTypeChange(e) {
+            switch (e.target.value) {
+                case 'predetermined':
+                    e.target.closest('sm-form').querySelector('.oracle-address-wrapper')?.remove()
+                    break;
+                case 'dynamic':
+                    e.target.closest('sm-form').querySelector('.oracle-address-wrapper')?.remove()
+                    e.target.closest('fieldset').after(html.node`
+                        <div class="grid gap-0-5 oracle-address-wrapper">
+                            <span class="label">Oracle FLO address</span>
+                            <sm-input id="contract_oracle_address" data-flo-address error-text="Invalid FLO address" required> </sm-input>
+                        </div>
+                    `)
+                    break;
+            }
+        }
+
+        async function createSmartContract() {
+            const { type, subtype } = pagesData.params
+            const contractName = document.getElementById('contract_name').value.trim().replace(/\s+/g, '-')
+            const creatorPrivateKey = document.getElementById('contract_creator_private_key').value.trim()
+            const creatorAddress = floCrypto.getFloID(creatorPrivateKey)
+            let floData
+            let confirmationMessage = ''
+            switch (type) {
+                case 'one-time-event':
+                    const contractAsset = document.getElementById('contract_asset').value;
+                    const contractExpiration = document.getElementById('contract_expiration').value;
+                    if (new Date(contractExpiration) < new Date()) {
+                        return notify(`Contract expiration datetime cannot be in the past`, 'error')
+                    }
+                    const contractParticipationAmount = parseFloat(document.getElementById('contract_participation_amount').value.trim()) || 0;
+                    const contractMinSubAmount = parseFloat(document.getElementById('contract_min_sub_amount').value.trim()) || 0;
+                    const contractMaxSubAmount = parseFloat(document.getElementById('contract_max_sub_amount').value.trim()) || 0;
+                    if (contractMinSubAmount > contractMaxSubAmount) {
+                        return notify(`Contract minimum subscription amount cannot be greater than maximum subscription amount`, 'error')
+                    }
+                    switch (subtype) {
+                        case 'time-trigger':
+                            const payeeAddressesShare = {}
+                            document.querySelectorAll('.payee-address-wrapper').forEach((payeeAddressWrapper) => {
+                                const payeeAddress = payeeAddressWrapper.querySelector('.payee-address').value.trim()
+                                const payeeShare = parseFloat(payeeAddressWrapper.querySelector('.payee-share').value.trim())
+                                if (payeeAddressesShare[payeeAddress])
+                                    payeeAddressesShare[payeeAddress] += payeeShare
+                                else
+                                    payeeAddressesShare[payeeAddress] = payeeShare
+                            })
+                            // check if payeeAddresses total share is equal to 100 else add remainder
+                            const payeeAddressesArray = Object.keys(payeeAddressesShare)
+                            const totalShare = payeeAddressesArray.reduce((acc, payeeAddress) => acc + payeeAddressesShare[payeeAddress], 0)
+                            if (totalShare < 100) {
+                                console.log('total share is not equal to 100')
+                                const res = await getConfirmation('Total share is not equal to 100', {
+                                    message: `Total share is not equal to 100. Do you want to add remainder to the last payee address?`,
+                                    confirmText: 'Add remainder',
+                                    cancelText: 'Cancel'
+                                })
+                                if (!res) return
+                                const remainder = 100 - totalShare
+                                const lastPayeeAddress = payeeAddressesArray[payeeAddressesArray.length - 1]
+                                payeeAddressesShare[lastPayeeAddress] += remainder
+                                const lastPayeeInput = document.getElementById('payee_container').lastElementChild.querySelector('.payee-share')
+                                if (lastPayeeInput) {
+                                    lastPayeeInput.value = payeeAddressesShare[lastPayeeAddress]
+                                    lastPayeeInput.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                }
+                                return
+                            } else if (totalShare > 100) {
+                                return notify(`Total share cannot be greater than 100`, 'error')
+                            }
+                            const payeeAddressesShareString = Object.entries(payeeAddressesShare).map(([payeeAddress, payeeShare]) => `${payeeAddress}:${payeeShare}`).join(':')
+                            console.log(payeeAddressesShareString)
+                            floData = `Create a smart contract of the name ${contractName}@ of the type one-time-event* using asset ${contractAsset}# at the FLO address ${creatorAddress}$ with contract-conditions: (1) expiryTime= ${new Date(contractExpiration).toString()} (2) payeeAddress= ${payeeAddressesShareString} ${contractParticipationAmount ? `(3) contractamount = ${contractParticipationAmount}` : ''} ${contractMinSubAmount ? `(4) minimumsubscriptionamount = ${contractMinSubAmount}` : ''} ${contractMaxSubAmount ? `(5) maximumsubscriptionamount = ${contractMaxSubAmount}` : ''} end-contract-conditions`
+                            if (floData.length > 1040) return notify(`Too many payee addresses! remove some and try again`, 'error')
+                            confirmationMessage = `Name: ${contractName} \nType: One-time event \nSubtype: Time trigger \nAsset: ${contractAsset} \nExpiration: ${new Date(contractExpiration).toString()} \nPayee addresses: ${Object.entries(payeeAddressesShare).reduce((str, [address, share]) => `${address}: ${share}%`, '')} \nParticipation amount: ${contractParticipationAmount} ${contractAsset} \nMin subscription amount: ${contractMinSubAmount} ${contractAsset} \nMax subscription amount: ${contractMaxSubAmount} ${contractAsset}`
+                            break;
+                        case 'external-trigger':
+                            const userChoices = new Set()
+                            document.querySelectorAll('.user-choice').forEach((userChoice) => {
+                                const userChoiceValue = userChoice.value.trim()
+                                if (userChoiceValue !== '')
+                                    userChoices.add(userChoiceValue)
+                            })
+                            floData = `Create a smart contract of the name ${contractName}@ of the type one-time-event* using asset ${contractAsset}# at the FLO address ${creatorAddress}$ with contract-conditions:(1) expiryTime= ${new Date(contractExpiration).toString()}  (2) userchoices= ${[...userChoices].join(' | ')} ${contractParticipationAmount ? `(3) contractamount = ${contractParticipationAmount}` : ''} ${contractMinSubAmount ? `(4) minimumsubscriptionamount = ${contractMinSubAmount}` : ''} ${contractMaxSubAmount ? `(5) maximumsubscriptionamount = ${contractMaxSubAmount}` : ''} end-contract-conditions`
+                            if (floData.length > 1040) return notify(`Too many participant choices! remove some and try again`, 'error')
+                            confirmationMessage = `Name: ${contractName} \nType: One-time event \nSubtype: External trigger \nAsset: ${contractAsset} \nExpiration: ${new Date(contractExpiration).toString()} \nParticipant choices: ${[...userChoices].join(' | ')} \nParticipation amount: ${contractParticipationAmount} ${contractAsset} \nMin subscription amount: ${contractMinSubAmount} ${contractAsset} \nMax subscription amount: ${contractMaxSubAmount} ${contractAsset}`
+                            break;
+                    }
+                    break;
+                case 'continuous-event':
+                    switch (subtype) {
+                        case 'tokenswap':
+                            const priceType = document.querySelector('input[name="price-type"]:checked').value
+                            const inputToken = document.getElementById('contract_input_token').value
+                            const outputToken = document.getElementById('contract_output_token').value
+                            if (inputToken === outputToken) return notify(`Input and output token cannot be same`, 'error')
+                            const initialPrice = parseFloat(document.getElementById('contract_initial_price').value.trim()) || 0;
+                            let oracleAddress
+                            if (priceType === 'dynamic')
+                                oracleAddress = document.getElementById('contract_oracle_address').value.trim()
+                            floData = `Create Smart Contract with the name ${contractName}@ of the type continuous-event* at the address ${creatorAddress}$ with contract-conditions : (1) subtype = tokenswap (2) accepting_token = ${inputToken}# (3) selling_token = ${outputToken}# (4) price = '${initialPrice}' (5) priceType = ${priceType} ${oracleAddress ? `(6) oracle_address = ${oracleAddress}` : ''} end-contract-conditions`
+                            confirmationMessage = `Name: ${contractName} \nType: Continuous event \nSubtype: Token swap \nInput token: ${inputToken} \nOutput token: ${outputToken} \nInitial price: ${initialPrice} ${inputToken} \nPrice type: ${priceType} ${oracleAddress ? `\nOracle address: ${oracleAddress}` : ''}`
+                            break;
+                    }
+                    break;
+            }
+            console.log(floData)
+            getConfirmation('Create smart contract', {
+                message: `Are you sure you want to create a smart contract with the following details? \n\n${confirmationMessage}`,
+                confirmText: 'Create',
+                cancelText: 'Cancel'
+            }).then((res) => {
+                if (!res) return
+                buttonLoader('create_contract_button', true)
+                floBlockchainAPI.writeData(creatorAddress, floData, creatorPrivateKey, creatorAddress).then((txid) => {
+                    showTransactionResult(true, txid, {
+                        title: 'Smart contract creation initiated',
+                        description: html`Check details about your smart contract <a href=${`https://ranchimall.github.io/floscout/#/contract/${contractName}-${creatorAddress}`} target="_blank" rel="noopener noreferrer">here</a>.
+                        <br> It may take some time for the smart contract to be created.`
+                    })
+                    getRef('smart_contract_creation_form').reset()
+                    document.getElementById('create_contract_button').disabled = true
+                }).catch((error) => {
+                    showTransactionResult(false, error)
+                    console.error(error)
+                }).finally(() => {
+                    buttonLoader('create_contract_button', false)
+                })
+            })
+        }
+
+        function addPayeeAddress() {
+            document.getElementById('payee_container').append(html.node`
+                <li class="payee-address-wrapper">
+                    <sm-input class="flex w-100 payee-address" placeholder="FLO address" error-text="Invalid FLO address" animate data-flo-address required> </sm-input>
+                    <sm-input class="payee-share" placeholder="Share (%)" value="100" type="number" min="0" max="100" step="0.01" error-text="Share should be between 0-100" animate required> </sm-input>
+                    <button class="button icon-only" onclick=${removePayee}>
+                        <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0z" fill="none"/><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>        
+                </li>
+            `)
+            document.getElementById('payee_container').querySelectorAll('.payee-share').forEach((input) => {
+                input.value = parseFloat((100 / document.getElementById('payee_container').querySelectorAll('.payee-share').length).toFixed(2))
+            })
+            document.getElementById('payee_container').lastElementChild.querySelector('.payee-address').customValidation = floCrypto.validateFloID
+        }
+        function removePayee(e) {
+            e.target.closest('li').remove()
+            document.getElementById('payee_container').querySelectorAll('.payee-share').forEach((input) => {
+                input.value = parseFloat((100 / document.getElementById('payee_container').querySelectorAll('.payee-share').length).toFixed(2))
+            })
+        }
+
+        function addChoice(e) {
+            const choiceNo = document.getElementById('choices_container').children.length + 1
+            document.getElementById('choices_container').append(html.node`
+                <div class="choice-wrapper">
+                    <sm-input class="user-choice" pattern="^[a-zA-Z0-9 ]+$" placeholder=${`Choice ${choiceNo}`} error-text="Only alphabet and numbers are allowed" required> </sm-input>  
+                    <button class="button icon-only" onclick=${removeChoice}>
+                        <svg class="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#000000"><path d="M0 0h24v24H0z" fill="none"/><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>        
+                </dic>
+            `)
+        }
+        function removeChoice(e) {
+            e.target.closest('.choice-wrapper').remove()
+            document.getElementById('choices_container').querySelectorAll('.user-choice').forEach((input, index) => {
+                input.placeholder = `Choice ${index + 1}`
+            })
+        }
+
+        function loader(show = true) {
+            if (show) {
+                getRef('loader').classList.remove('hidden')
+            } else {
+                getRef('loader').animate([
+                    { transform: 'translateY(0)' },
+                    { transform: 'translateY(-100%)' }
+                ], {
+                    duration: 300,
+                    easing: 'ease-in-out'
+                }).onfinish = () =>
+                        getRef('loader').classList.add('hidden')
+            }
+        }
+        function replaceDash(str) {
+            return str.replace(/-/g, ' ')
+        }
+
     </script>
 </body>
 

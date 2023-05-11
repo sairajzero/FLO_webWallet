@@ -52,60 +52,29 @@
     floWebWallet.syncTransactions = function (addr) {
         return new Promise((resolve, reject) => {
             compactIDB.readData('lastSync', addr).then(lastSync => {
-                lastSync = lastSync | 0;
-                getNewTxs(addr, lastSync).then(APIresult => {
+                const old_support = Number.isInteger(lastSync); //backward support
+                let fetch_options = {};
+                if (typeof lastSync == 'string' && /^[a-f0-9]{64}$/i.test(lastSync))    //txid as lastSync
+                    fetch_options.after = lastSync;
+                floBlockchainAPI.readAllTxs(addr, fetch_options).then(response => {
+                    let newItems = response.items.map(({ time, txid, floData, isCoinBase, vin, vout }) => ({
+                        time, txid, floData, isCoinBase,
+                        sender: isCoinBase ? `(mined)${vin[0].coinbase}` : vin[0].addr,
+                        receiver: isCoinBase ? addr : vout[0].scriptPubKey.addresses[0]
+                    })).reverse();
                     compactIDB.readData('transactions', addr).then(IDBresult => {
-                        if (IDBresult === undefined)
-                            var promise1 = compactIDB.addData('transactions', APIresult.items, addr)
-                        else
-                            var promise1 = compactIDB.writeData('transactions', IDBresult.concat(APIresult.items), addr)
-                        var promise2 = compactIDB.writeData('lastSync', APIresult.totalItems, addr)
-                        Promise.all([promise1, promise2]).then(values => resolve(APIresult.items))
+                        if ((IDBresult === undefined || old_support))//backward support
+                            IDBresult = [];
+                        compactIDB.writeData('transactions', IDBresult.concat(newItems), addr).then(result => {
+                            compactIDB.writeData('lastSync', response.lastItem, addr)
+                                .then(result => resolve(newItems))
+                                .catch(error => reject(error))
+                        }).catch(error => reject(error))
                     })
-                })
+
+                }).catch(error => reject(error))
             }).catch(error => reject(error))
         })
-    }
-
-    //Get new Tx in blockchain since last sync using API
-    function getNewTxs(addr, ignoreOld) {
-        return new Promise((resolve, reject) => {
-            floBlockchainAPI.readTxs(addr, 0, 1).then(response => {
-                var newItems = response.totalItems - ignoreOld;
-                if (newItems) {
-                    floBlockchainAPI.readTxs(addr, 0, newItems * 2).then(response => {
-                        var filteredData = [];
-                        for (let i = 0; i < newItems; i++) {
-                            var item = {
-                                time: response.items[i].time,
-                                txid: response.items[i].txid,
-                                floData: response.items[i].floData
-                            }
-                            if (response.items[i].isCoinBase) {
-                                item.sender = '(mined)' + response.items[i].vin[0].coinbase;
-                                item.receiver = addr;
-                            } else {
-                                item.sender = response.items[i].vin[0].addr;
-                                item.receiver = response.items[i].vout[0].scriptPubKey.addresses[0];
-                            }
-                            filteredData.unshift(item);
-                        }
-                        resolve({
-                            totalItems: response.totalItems,
-                            items: filteredData
-                        });
-                    }).catch(error => {
-                        reject(error);
-                    });
-                } else
-                    resolve({
-                        totalItems: response.totalItems,
-                        items: []
-                    })
-            }).catch(error => {
-                reject(error);
-            });
-        });
     }
 
     //read transactions stored in IDB : resolves Array(storedItems)
@@ -122,6 +91,15 @@
         return new Promise((resolve, reject) => {
             compactIDB.readAllData('labels')
                 .then(IDBresult => resolve(IDBresult))
+                .catch(error => reject(error))
+        })
+    }
+
+    //bulk transfer tokens
+    floWebWallet.bulkTransferTokens = function (sender, privKey, token, receivers) {
+        return new Promise((resolve, reject) => {
+            floTokenAPI.bulkTransferTokens(sender, privKey, token, receivers)
+                .then(result => resolve(result))
                 .catch(error => reject(error))
         })
     }
